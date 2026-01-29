@@ -1,0 +1,162 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # MinIO - 資料儲存服務
+  # ============================================
+  minio:
+    image: minio/minio
+    container_name: jtb-minio
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"   # API
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"   # Console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-password123}
+    volumes:
+      # If user wants to map host path, they can change volume definition or use named volume redirection
+      # For simplicity in .env, we stick to named volume as default but allow override if user edits here
+      # However to make it fully configurable via .env without editing yml is tricky for "named vs host volume" switch
+      # But we can allow valid host path in .env if we use bind mount syntax like:
+      # - ${MINIO_DATA_PATH:-minio-data}:/data  <-- This works if MINIO_DATA_PATH is a path. If it's a named volume name, it might be tricky.
+      # Let's keep it simple: Use named volume by default, user can edit .env to point to a host path if they know docker-compose syntax.
+      # Actually simpler: default to named volume 'minio-data'. If user wants host path, they edit the volumes section below or here.
+      # But to fulfill request "minio 預計的 volume 位置", maybe we default to a local host folder?
+      # Let's use a variable for the source
+      - ${MINIO_DATA_PATH:-minio-data}:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # Backend - FastAPI + CUDA
+  # ============================================
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        CUDA_VER: ${CUDA_VER:-12.8}
+        CUDNN_VER: ${CUDNN_VER:-9}
+    image: jtb-cuda-env
+    container_name: jtb-backend
+    ports:
+      - "${SERVER_PORT:-42045}:42045"
+    environment:
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
+      - MINIO_ACCESS_KEY=${MINIO_USER:-admin}
+      - MINIO_SECRET_KEY=${MINIO_PASSWORD:-password123}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - .:/workspace
+      - model-cache:/home/developer/.cache
+    working_dir: /workspace
+    command: python -m uvicorn backend.main:app --host 0.0.0.0 --port 42045
+    depends_on:
+      minio:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  # ============================================
+  # Frontend - React + Vite
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: jtb-frontend-env
+    container_name: jtb-frontend
+    ports:
+      - "${FRONTEND_PORT:-42040}:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:42045/api}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # ============================================
+  # TensorBoard - 訓練監控 (可選)
+  # ============================================
+  tensorboard:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        CUDA_VER: ${CUDA_VER:-12.8}
+        CUDNN_VER: ${CUDNN_VER:-9}
+    image: jtb-cuda-env
+    container_name: jtb-tensorboard
+    ports:
+      - "${TENSORBOARD_PORT:-6006}:6006"
+    volumes:
+      - ./model_output:/workspace/model_output:ro
+    working_dir: /workspace
+    command: python -m tensorboard.main --logdir="./model_output" --host "0.0.0.0" --port 6006
+    depends_on:
+      - backend
+    profiles:
+      - monitoring
+    restart: unless-stopped
+
+  # ============================================
+  # JupyterLab - 互動式開發 (可選)
+  # ============================================
+  jupyter:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        CUDA_VER: ${CUDA_VER:-12.8}
+        CUDNN_VER: ${CUDNN_VER:-9}
+    image: jtb-cuda-env
+    container_name: jtb-jupyter
+    ports:
+      - "${JUPYTER_PORT:-28888}:8888"
+    volumes:
+      - .:/workspace
+      - model-cache:/home/developer/.cache
+    working_dir: /workspace
+    command: >
+      python -m jupyterlab 
+      --ip='0.0.0.0' 
+      --NotebookApp.token='' 
+      --NotebookApp.password='' 
+      --allow-root 
+      --no-browser 
+      --port 8888
+    depends_on:
+      - backend
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    profiles:
+      - dev
+    restart: unless-stopped
+
+volumes:
+  minio-data:
+    driver: local
+  model-cache:
+    driver: local
+
+networks:
+  default:
+    name: jtb-network

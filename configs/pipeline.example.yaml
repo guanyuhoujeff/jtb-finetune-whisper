@@ -1,0 +1,55 @@
+# Example pipeline config (YAML)
+
+# Dataset preparation
+# source_root must contain audio/ and label/ folders
+# output_root will be overwritten by split if exists
+
+dataset:
+  source_root: ./asia_new_bay_dataset
+  output_root: ./asia_new_bay_dataset_to_train
+  split_ratio: 0.7
+  seed: 42
+
+# MinIO for dataset storage
+minio:
+  endpoint: 192.168.1.37:9000
+  access_key: admin
+  secret_key: YOUR_PASSWORD
+  bucket_name: asia-new-bay-dataset
+  secure: false
+
+# Training
+train:
+  model_name: openai/whisper-large-v2
+  output_dir: ./asia_new_bay-whisper-large-v2
+  max_steps: 6000
+  eval_steps: 500
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 4
+  learning_rate: 0.0001
+  warmup_steps: 50
+  evaluation_strategy: steps
+  logging_steps: 25
+  fp16: true
+  gradient_checkpointing: true
+  optim: paged_adamw_8bit
+  generation_max_length: 128
+  save_total_limit: 1
+
+# Merge LoRA adapter
+merge:
+  # lora_checkpoint: ./asia_new_bay-whisper-large-v2/checkpoint-6000
+  output_dir: ./asia_new_bay-whisper-large-v2-merge/whisper-large-v2-finetune
+  local_files_only: false
+
+# CTranslate2 conversion
+ct2:
+  # if model_path is empty, merged output_dir will be used
+  model_path: ""
+  output_dir: ./asia_new_bay-whisper-large-v2-ct2
+  quantization: float16
+
+# HuggingFace upload
+hf:
+  repo_id: yourname/asia_new_bay-whisper-large-v2
+  token: ""
