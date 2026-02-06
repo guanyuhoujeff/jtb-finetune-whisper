@@ -121,7 +121,7 @@ docker build -f Dockerfile -t jtb-frontend-env .
 docker run -d \
   -p 9000:9000 -p 9001:9001 \
   --name minio-server \
-  -v minio-data:/data \
+  -v ./minio-data:/data \
   -e "MINIO_ROOT_USER=admin" \
   -e "MINIO_ROOT_PASSWORD=password123" \
   minio/minio server /data --console-address ":9001"
@@ -130,6 +130,7 @@ docker run -d \
 #### 3️⃣ 啟動後端 API
 
 ```bash
+cd <專案根目錄>
 docker run  -d \
   --name jtb-finetune-backend \
   --restart=always \
@@ -142,6 +143,7 @@ docker run  -d \
 #### 4️⃣ 啟動前端
 
 ```bash
+cd  <專案根目錄>/frontend
 docker run -d \
   --name jtb-finetune-frontend \
   --restart=always \

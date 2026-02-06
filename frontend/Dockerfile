@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # 安裝依賴
-RUN npm ci
+RUN npm install
 
 # 複製源碼
 COPY . .

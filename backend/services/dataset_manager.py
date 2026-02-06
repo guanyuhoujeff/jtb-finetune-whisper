@@ -242,6 +242,10 @@ class DatasetManager:
             # Append using concat
             if rows_to_add:
                 master_df = pd.concat([master_df, pd.DataFrame(rows_to_add)], ignore_index=True)
+            
+            # Deduplicate based on file_name, keeping the latest one to prevent unlimited expansion
+            if not master_df.empty:
+                master_df.drop_duplicates(subset=['file_name'], keep='last', inplace=True)
 
             # Upload back
             csv_buffer = StringIO()
