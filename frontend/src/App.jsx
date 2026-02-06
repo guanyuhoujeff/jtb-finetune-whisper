@@ -48,12 +48,23 @@ const App = () => {
 
     const [split, setSplit] = useState('train');
     const [page, setPage] = useState(1);
-    const [limit] = useState(50);
+    const [limit, setLimit] = useState(50);
     const [data, setData] = useState([]);
     const [uniqueTags, setUniqueTags] = useState([]);
     const [totalItems, setTotalItems] = useState(0);
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+
+    // Debounce effect
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchTerm(searchTerm);
+            setPage(1); // Reset to page 1 on new search
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
     const [selectedIds, setSelectedIds] = useState([]);
 
     // Modals
@@ -103,7 +114,12 @@ const App = () => {
         if (!silent) setLoading(true);
         try {
             const res = await axios.get(`${apiBaseUrl}/dataset/${bucket}/${split}`, {
-                params: { page, limit, t: Date.now() }
+                params: {
+                    page,
+                    limit,
+                    search: debouncedSearchTerm, // Send search param
+                    t: Date.now()
+                }
             });
             if (res.data.data) {
                 setData(res.data.data);
@@ -126,7 +142,7 @@ const App = () => {
             // Persist
             localStorage.setItem('minio_bucket', bucket);
         }
-    }, [split, page, bucket, apiBaseUrl]);
+    }, [split, page, limit, bucket, apiBaseUrl, debouncedSearchTerm]); // Added limit dependency
 
     // Reset page when split changes
     useEffect(() => {
@@ -315,16 +331,8 @@ const App = () => {
         });
     };
 
-    // Filter data 
-    const filteredData = data.filter(item => {
-        if (!searchTerm) return true;
-        const lowerTerm = searchTerm.toLowerCase();
-        return (
-            item.file_name.toLowerCase().includes(lowerTerm) ||
-            (item.transcription && item.transcription.toLowerCase().includes(lowerTerm)) ||
-            (item.tags && item.tags.toLowerCase().includes(lowerTerm))
-        );
-    });
+    // Use data directly, backend handles filtering
+    const filteredData = data;
 
     const totalPages = Math.ceil(totalItems / limit);
 
@@ -457,10 +465,61 @@ const App = () => {
                         </div>
 
                         {/* Pagination Footer */}
-                        <div className="flex items-center justify-between bg-slate-900 border border-slate-800 p-4 rounded-xl shrink-0 mt-4">
-                            <div className="text-sm text-slate-400">
-                                Showing page <span className="text-white font-medium">{page}</span> of <span className="text-white font-medium">{totalPages || 1}</span>
+                        <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-4 rounded-xl shrink-0 mt-4">
+                            <div className="flex items-center gap-6 text-sm text-slate-400">
+                                {/* Page Info */}
+                                <span>
+                                    Page <span className="text-white font-medium">{page}</span> of <span className="text-white font-medium">{totalPages || 1}</span>
+                                </span>
+
+                                {/* Page Size Selector */}
+                                <div className="flex items-center gap-2">
+                                    <span>Rows:</span>
+                                    <select
+                                        value={limit}
+                                        onChange={(e) => {
+                                            setLimit(Number(e.target.value));
+                                            setPage(1);
+                                        }}
+                                        className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-indigo-500 cursor-pointer"
+                                    >
+                                        <option value={10}>10</option>
+                                        <option value={20}>20</option>
+                                        <option value={50}>50</option>
+                                        <option value={100}>100</option>
+                                        <option value={200}>200</option>
+                                    </select>
+                                </div>
+
+                                {/* Jump to Page */}
+                                <div className="flex items-center gap-2">
+                                    <span>Go to:</span>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max={totalPages || 1}
+                                        defaultValue={page}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = parseInt(e.currentTarget.value);
+                                                if (!isNaN(val) && val >= 1 && val <= (totalPages || 1)) {
+                                                    setPage(val);
+                                                }
+                                            }
+                                        }}
+                                        onBlur={(e) => {
+                                            const val = parseInt(e.target.value);
+                                            if (!isNaN(val) && val >= 1 && val <= (totalPages || 1)) {
+                                                setPage(val);
+                                            } else {
+                                                e.target.value = page; // Reset if invalid
+                                            }
+                                        }}
+                                        className="w-12 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white text-center text-xs focus:outline-none focus:border-indigo-500"
+                                    />
+                                </div>
                             </div>
+
                             <div className="flex gap-2">
                                 <button
                                     onClick={() => setPage(p => Math.max(1, p - 1))}

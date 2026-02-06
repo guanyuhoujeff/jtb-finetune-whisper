@@ -106,6 +106,16 @@ docker compose down
 
 #### 1️⃣ 建置 Docker 映像
 
+```bash
+docker run -d \
+  -p 9000:9000 -p 9001:9001 \
+  --name minio-server \
+  -v ./minio-data:/data \
+  -e "MINIO_ROOT_USER=admin" \
+  -e "MINIO_ROOT_PASSWORD=password123" \
+  minio/minio server /data --console-address ":9001"
+
+
 **後端映像** (含 CUDA 環境)：
 ```bash
 cd backend
@@ -117,17 +127,11 @@ docker build -f Dockerfile -t jtb-cuda-env \
 cd frontend
 docker build -f Dockerfile -t jtb-frontend-env .
 
-```bash
-docker run -d \
-  -p 9000:9000 -p 9001:9001 \
-  --name minio-server \
-  -v ./minio-data:/data \
-  -e "MINIO_ROOT_USER=admin" \
-  -e "MINIO_ROOT_PASSWORD=password123" \
-  minio/minio server /data --console-address ":9001"
 ```
 
 #### 3️⃣ 啟動後端 API
+
+docker rm -f jtb-finetune-backend jtb-finetune-frontend
 
 ```bash
 cd <專案根目錄>

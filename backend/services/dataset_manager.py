@@ -6,7 +6,7 @@ class DatasetManager:
     def __init__(self, client: MinioClientWrapper):
         self.client = client
 
-    def get_dataset(self, bucket_name: str, split: str, page: int = 1, limit: int = 50):
+    def get_dataset(self, bucket_name: str, split: str, page: int = 1, limit: int = 50, search: str = None):
         """
         Reads metadata.csv from the specified bucket and split (train/test),
         and generates presigned URLs for each audio file.
@@ -37,6 +37,16 @@ class DatasetManager:
                     # Split by comma, strip whitespace
                     current_tags = [t.strip() for t in str(tags_str).split(',') if t.strip()]
                     unique_tags.update(current_tags)
+            
+            # Search Filter
+            if search:
+                search_lower = search.lower()
+                mask = (
+                    df['file_name'].str.lower().str.contains(search_lower, na=False) |
+                    df['transcription'].str.lower().str.contains(search_lower, na=False) |
+                    df['tags'].str.lower().str.contains(search_lower, na=False)
+                )
+                df = df[mask]
             
             total_items = len(df)
             

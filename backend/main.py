@@ -111,9 +111,8 @@ def clone_bucket(req: CloneBucketRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/dataset/{bucket}/{split}")
-
-def get_dataset(bucket: str, split: str, page: int = 1, limit: int = 50):
-    result = dataset_manager.get_dataset(bucket, split, page, limit)
+def get_dataset(bucket: str, split: str, page: int = 1, limit: int = 50, search: Optional[str] = None):
+    result = dataset_manager.get_dataset(bucket, split, page, limit, search)
     return result
 
 @app.post("/api/dataset/row")
