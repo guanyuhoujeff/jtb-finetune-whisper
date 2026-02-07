@@ -481,5 +481,72 @@ async def compare_models(request: CompareRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+@app.post("/api/evaluate/save")
+async def save_evaluation_result(
+    transcription: str = Form(...),
+    target_bucket: str = Form(...),
+    splits: str = Form(...),  # JSON string list e.g. '["train", "test"]'
+    audio_source: str = Form(...),  # "bucket" or "upload"
+    # For bucket source
+    source_bucket: Optional[str] = Form(None),
+    source_file: Optional[str] = Form(None),
+    # For upload/mic source
+    audio_file: Optional[UploadFile] = File(None)
+):
+    try:
+        import json
+        target_splits = json.loads(splits)
+        if not target_splits:
+            raise HTTPException(status_code=400, detail="At least one split (train/test) must be selected")
+
+        audio_content = None
+        file_name = None
+
+        if audio_source == "bucket":
+            if not source_bucket or not source_file:
+                 raise HTTPException(status_code=400, detail="Source bucket and file required for bucket source")
+            
+            # Fetch from MinIO source
+            # source_file is the full object path e.g. "train/audio/file.wav"
+            # But wait, dataset_manager.add_audio_record expects just the filename part for the clean name,
+            # and it puts it into {split}/audio/{filename}.
+            # We should probably preserve the original filename.
+            
+            try:
+                response = minio_client.client.get_object(source_bucket, source_file)
+                audio_content = response.read()
+                response.close()
+                response.release_conn()
+                file_name = source_file.split('/')[-1] # Extract filename from path
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Could not read source file: {e}")
+
+        elif audio_source == "upload":
+            if not audio_file:
+                 raise HTTPException(status_code=400, detail="Audio file required for upload source")
+            audio_content = await audio_file.read()
+            file_name = audio_file.filename or f"eval_{os_module.urandom(4).hex()}.wav"
+        
+        else:
+             raise HTTPException(status_code=400, detail="Invalid audio source")
+
+        # Save to dataset
+        results = dataset_manager.save_evaluation_data(
+            target_bucket=target_bucket,
+            splits=target_splits,
+            file_name=file_name,
+            transcription=transcription,
+            audio_data=audio_content
+        )
+
+        return {"status": "success", "results": results}
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

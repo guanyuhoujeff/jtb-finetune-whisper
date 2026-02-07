@@ -132,7 +132,7 @@ docker build -f Dockerfile -t jtb-frontend-env .
 #### 3️⃣ 啟動後端 API
 
 docker rm -f jtb-finetune-backend jtb-finetune-frontend
-
+docker rm -f jtb-finetune-frontend
 ```bash
 cd <專案根目錄>
 docker run  -d \

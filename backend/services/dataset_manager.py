@@ -508,6 +508,28 @@ class DatasetManager:
             print(f"Error cloning bucket: {e}")
             raise e
 
+
+    def save_evaluation_data(self, target_bucket: str, splits: list[str], file_name: str, transcription: str, audio_data: bytes):
+        """
+        Saves evaluation result (audio + transcription) to specified splits in the target bucket.
+        """
+        results = {}
+        for split in splits:
+            try:
+                self.add_audio_record(
+                    bucket_name=target_bucket,
+                    split=split,
+                    file_name=file_name,
+                    transcription=transcription,
+                    audio_data=audio_data,
+                    tags="evaluation"
+                )
+                results[split] = "success"
+            except Exception as e:
+                results[split] = str(e)
+                print(f"Error saving to {split}: {e}")
+        return results
+
 dataset_manager = DatasetManager(minio_client)
 
 

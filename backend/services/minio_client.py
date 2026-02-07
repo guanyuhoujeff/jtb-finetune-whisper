@@ -4,8 +4,9 @@ from minio.error import S3Error
 import os
 
 class MinioClientWrapper:
-    def __init__(self, endpoint, access_key, secret_key, secure=False):
+    def __init__(self, endpoint, access_key, secret_key, secure=False, external_endpoint=None):
         self.endpoint = endpoint
+        self.external_endpoint = external_endpoint
         self.access_key = access_key
         self.secret_key = secret_key
         self.secure = secure
@@ -20,7 +21,11 @@ class MinioClientWrapper:
         return self.client.list_buckets()
 
     def get_presigned_url(self, bucket_name, object_name):
-        return self.client.get_presigned_url("GET", bucket_name, object_name)
+        url = self.client.get_presigned_url("GET", bucket_name, object_name)
+        if self.external_endpoint and self.endpoint != self.external_endpoint:
+            # Replace internal endpoint with external one for browser access
+            return url.replace(self.endpoint, self.external_endpoint)
+        return url
 
     def get_object(self, bucket_name, object_name):
         return self.client.get_object(bucket_name, object_name)
@@ -45,8 +50,9 @@ class MinioClientWrapper:
             return True
         return False
 
-    def update_config(self, endpoint, access_key, secret_key, secure=False):
+    def update_config(self, endpoint, access_key, secret_key, secure=False, external_endpoint=None):
         self.endpoint = endpoint
+        self.external_endpoint = external_endpoint
         self.access_key = access_key
         self.secret_key = secret_key
         self.secure = secure
@@ -57,9 +63,12 @@ class MinioClientWrapper:
             secure=secure
         )
 
-# Default configuration from MINIO_SCHEMA.md
-MINIO_ENDPOINT = "192.168.1.37:9000"
 # Default configuration from environment variables
+# Internal endpoint for backend connection (default to docker service name)
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio:9000")
+# External endpoint for browser access (default to localhost)
+MINIO_EXTERNAL_ENDPOINT = os.getenv("MINIO_EXTERNAL_ENDPOINT", "localhost:9000")
+
 ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "admin")
 SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "password123")
 BUCKET_NAME = "asia-new-bay-dataset"
@@ -67,5 +76,6 @@ BUCKET_NAME = "asia-new-bay-dataset"
 minio_client = MinioClientWrapper(
     endpoint=MINIO_ENDPOINT,
     access_key=ACCESS_KEY,
-    secret_key=SECRET_KEY
+    secret_key=SECRET_KEY,
+    external_endpoint=MINIO_EXTERNAL_ENDPOINT
 )

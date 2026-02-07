@@ -3,7 +3,7 @@ import axios from 'axios';
 import {
     FlaskConical, Play, Mic, MicOff, Upload, Database,
     ChevronRight, Check, Loader2, Brain, Zap, Clock,
-    BarChart3, FileAudio, RefreshCw, ArrowLeftRight
+    BarChart3, FileAudio, RefreshCw, ArrowLeftRight, Save
 } from 'lucide-react';
 
 // Model Card Component
@@ -153,6 +153,7 @@ const EvaluatePage = ({ apiBaseUrl }) => {
     const [bucketPage, setBucketPage] = useState(1);
     const [bucketTotal, setBucketTotal] = useState(0);
     const bucketLimit = 50;
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
 
     // Recording
     const [isRecording, setIsRecording] = useState(false);
@@ -258,7 +259,7 @@ const EvaluatePage = ({ apiBaseUrl }) => {
         };
 
         fetchFiles();
-    }, [apiBaseUrl, selectedBucket, bucketPage]);
+    }, [apiBaseUrl, selectedBucket, bucketPage, refreshTrigger]);
 
     // Reset page when bucket changes
     useEffect(() => {
@@ -419,6 +420,90 @@ const EvaluatePage = ({ apiBaseUrl }) => {
             alert("Inference failed: " + (err.response?.data?.detail || err.message));
         } finally {
             setIsProcessing(false);
+        }
+    };
+
+    // Save to Dataset Logic
+    const [saveConfig, setSaveConfig] = useState({
+        transcription: '',
+        splits: { train: true, test: false },
+        bucket: '',
+    });
+    const [isSaving, setIsSaving] = useState(false);
+
+    // Update save config when results change (default to Result A)
+    useEffect(() => {
+        if (resultA) {
+            setSaveConfig(prev => ({
+                ...prev,
+                transcription: resultA.transcription || '',
+                bucket: selectedBucket || availableBuckets[0] || ''
+            }));
+        } else if (resultB) {
+            setSaveConfig(prev => ({
+                ...prev,
+                transcription: resultB.transcription || '',
+                bucket: selectedBucket || availableBuckets[0] || ''
+            }));
+        }
+    }, [resultA, resultB, selectedBucket, availableModels]); // Added availableModels dependency just in case
+
+    const handleSave = async () => {
+        const splits = Object.keys(saveConfig.splits).filter(k => saveConfig.splits[k]);
+        if (splits.length === 0) {
+            alert("Please select at least one split (Train or Test)");
+            return;
+        }
+        if (!saveConfig.bucket) {
+            alert("Please select a target bucket");
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const formData = new FormData();
+            formData.append('transcription', saveConfig.transcription);
+            formData.append('target_bucket', saveConfig.bucket);
+            formData.append('splits', JSON.stringify(splits));
+
+            // Audio Source Logic
+            if (audioTab === 'bucket' && selectedFile) {
+                formData.append('audio_source', 'bucket');
+                formData.append('source_bucket', selectedBucket);
+                formData.append('source_file', selectedFile);
+            } else if (audioTab === 'upload' && uploadedFile) {
+                formData.append('audio_source', 'upload');
+                formData.append('audio_file', uploadedFile);
+            } else if (audioTab === 'mic' && recordedAudio) {
+                formData.append('audio_source', 'upload');
+                // Convert blob to file
+                formData.append('audio_file', recordedAudio, `recording_${Date.now()}.wav`);
+            } else {
+                throw new Error("No valid audio source found");
+            }
+
+            await axios.post(`${apiBaseUrl}/evaluate/save`, formData);
+            alert("Successfully saved to dataset!");
+
+            // Refresh file list if we saved to the current bucket
+            if (saveConfig.bucket === selectedBucket && audioTab === 'bucket') {
+                // Trigger a re-fetch by toggling page or similar, or just manually calling fetching logic.
+                // Simplest way is to temporarily clear bucketFiles or force fetch.
+                // We'll reset bucketPage which triggers the useEffect.
+                setBucketPage(1);
+                // If we are already on page 1, the effect might not fire if only page depends on it.
+                // But selectedBucket is same. Let's add a dummy state to force refresh or just direct call.
+                // Actually, the useEffect depends on [apiBaseUrl, selectedBucket, bucketPage].
+                // If we stay on page 1, we need another trigger.
+                // Let's create a refresh trigger.
+                setRefreshTrigger(prev => prev + 1);
+            }
+
+        } catch (err) {
+            console.error("Save failed", err);
+            alert("Save failed: " + (err.response?.data?.detail || err.message));
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -814,10 +899,109 @@ const EvaluatePage = ({ apiBaseUrl }) => {
                                 </div>
                             </div>
                         )}
+
+                        {/* Save to Dataset Section */}
+                        {(resultA || resultB) && (
+                            <div className="mt-6 border-t border-slate-800 pt-6">
+                                <div className="flex items-center gap-2 mb-4 text-slate-400">
+                                    <Database size={18} />
+                                    <h2 className="text-sm font-semibold uppercase tracking-wider">Save to Dataset</h2>
+                                </div>
+
+                                <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 space-y-4">
+                                    {/* Transcription Editor */}
+                                    <div>
+                                        <label className="text-xs text-slate-500 font-medium uppercase mb-1 block">
+                                            Verify & Edit Transcription
+                                        </label>
+                                        <textarea
+                                            value={saveConfig.transcription}
+                                            onChange={(e) => setSaveConfig(prev => ({ ...prev, transcription: e.target.value }))}
+                                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 min-h-[80px]"
+                                            placeholder="Transcription text..."
+                                        />
+                                    </div>
+
+                                    <div className="flex gap-4">
+                                        {/* Target Bucket */}
+                                        <div className="flex-1">
+                                            <label className="text-xs text-slate-500 font-medium uppercase mb-1 block">
+                                                Target Bucket
+                                            </label>
+                                            <select
+                                                value={saveConfig.bucket}
+                                                onChange={(e) => setSaveConfig(prev => ({ ...prev, bucket: e.target.value }))}
+                                                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                            >
+                                                {availableBuckets.map(b => (
+                                                    <option key={b} value={b}>{b}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* Splits */}
+                                        <div className="flex-1">
+                                            <label className="text-xs text-slate-500 font-medium uppercase mb-1 block">
+                                                Add to Splits
+                                            </label>
+                                            <div className="flex gap-4 mt-2">
+                                                <label className="flex items-center gap-2 cursor-pointer group">
+                                                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${saveConfig.splits.train
+                                                        ? 'bg-indigo-500 border-indigo-500'
+                                                        : 'border-slate-600 group-hover:border-slate-500'
+                                                        }`}>
+                                                        {saveConfig.splits.train && <Check size={12} className="text-white" />}
+                                                    </div>
+                                                    <input
+                                                        type="checkbox"
+                                                        className="hidden"
+                                                        checked={saveConfig.splits.train}
+                                                        onChange={(e) => setSaveConfig(prev => ({
+                                                            ...prev,
+                                                            splits: { ...prev.splits, train: e.target.checked }
+                                                        }))}
+                                                    />
+                                                    <span className="text-sm text-slate-300">Train</span>
+                                                </label>
+
+                                                <label className="flex items-center gap-2 cursor-pointer group">
+                                                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${saveConfig.splits.test
+                                                        ? 'bg-indigo-500 border-indigo-500'
+                                                        : 'border-slate-600 group-hover:border-slate-500'
+                                                        }`}>
+                                                        {saveConfig.splits.test && <Check size={12} className="text-white" />}
+                                                    </div>
+                                                    <input
+                                                        type="checkbox"
+                                                        className="hidden"
+                                                        checked={saveConfig.splits.test}
+                                                        onChange={(e) => setSaveConfig(prev => ({
+                                                            ...prev,
+                                                            splits: { ...prev.splits, test: e.target.checked }
+                                                        }))}
+                                                    />
+                                                    <span className="text-sm text-slate-300">Test</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Action Button */}
+                                    <button
+                                        onClick={handleSave}
+                                        disabled={isSaving}
+                                        className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                                        {isSaving ? "Saving..." : "Save to Dataset"}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 };
 
