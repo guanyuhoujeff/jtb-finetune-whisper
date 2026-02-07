@@ -23,6 +23,7 @@ import BucketSelectionModal from './components/modals/BucketSelectionModal';
 import SettingsModal from './components/modals/SettingsModal';
 import TrainingPage from './components/pages/TrainingPage';
 import EvaluatePage from './components/pages/EvaluatePage';
+import UploadPage from './components/pages/UploadPage';
 
 const App = () => {
     // View State
@@ -363,6 +364,10 @@ const App = () => {
             ) : view === 'evaluate' ? (
                 <main className="flex-1 min-w-0 overflow-hidden">
                     <EvaluatePage apiBaseUrl={apiBaseUrl} />
+                </main>
+            ) : view === 'upload' ? (
+                <main className="flex-1 min-w-0 overflow-hidden">
+                    <UploadPage apiBaseUrl={apiBaseUrl} />
                 </main>
             ) : (
                 <main className="flex-1 flex flex-col min-w-0">

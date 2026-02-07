@@ -4,8 +4,25 @@ from __future__ import annotations
 import os
 from typing import Dict
 
-from handler import MinioHandler
+from minio import Minio
 from .config import MinioConfig
+
+
+class MinioHandler:
+    def __init__(self, endpoint, access_key, secret_key, bucket_name, secure=False):
+        self.bucket_name = bucket_name
+        self.client = Minio(
+            endpoint,
+            access_key=access_key,
+            secret_key=secret_key,
+            secure=secure
+        )
+        # Ensure bucket exists
+        if not self.client.bucket_exists(bucket_name):
+            self.client.make_bucket(bucket_name)
+
+    def upload_file(self, object_name, file_path):
+        self.client.fput_object(self.bucket_name, object_name, file_path)
 
 
 def set_minio_env_vars(cfg: MinioConfig) -> None:

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { HardDrive, PlusCircle, FlaskConical, Cpu, Trash2, RefreshCw } from 'lucide-react';
+import { HardDrive, PlusCircle, FlaskConical, Cpu, Trash2, RefreshCw, Upload } from 'lucide-react';
 
 // GPU Memory Widget Component
 const GpuMemoryWidget = ({ apiBaseUrl }) => {
@@ -156,6 +156,16 @@ const Sidebar = ({
                 >
                     <FlaskConical size={18} />
                     Evaluate
+                </button>
+                <button
+                    onClick={() => onViewChange('upload')}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${view === 'upload'
+                        ? 'bg-purple-600/10 text-purple-400'
+                        : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                        }`}
+                >
+                    <Upload size={18} />
+                    Upload
                 </button>
             </div>
 

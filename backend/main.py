@@ -243,7 +243,6 @@ def get_training_status():
 
 @app.get("/api/train/models")
 def get_available_models():
-    """Returns a list of available Whisper models."""
     return {
         "models": [
             "openai/whisper-tiny",
@@ -254,6 +253,25 @@ def get_available_models():
             "openai/whisper-large-v3",
         ]
     }
+
+class UploadModelRequest(BaseModel):
+    model_name: str
+    variant: Optional[str] = None # 'lora', 'merged', 'ct2'
+    source: str = "custom" 
+    repo_id: str
+    hf_token: str
+
+@app.post("/api/train/upload")
+def upload_model(request: UploadModelRequest):
+    try:
+        # Resolve path - reusing evaluate_manager logic
+        model_path = evaluate_manager._get_model_path(request.model_name, request.source, request.variant)
+        
+        training_manager.start_upload_task(model_path, request.repo_id, request.hf_token)
+        return {"status": "success", "message": "Upload task started"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 from fastapi.responses import StreamingResponse
 import asyncio

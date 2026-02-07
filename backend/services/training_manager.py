@@ -208,6 +208,44 @@ class TrainingManager:
             self.logs.append("[SYSTEM] Pipeline started.")
             self._start_next_task()
 
+    def start_upload_task(self, model_path: str, repo_id: str, hf_token: str):
+        with self.lock:
+            if self.status == "running":
+                raise RuntimeError("A task is already running.")
+            
+            # Reset logs
+            self.logs.clear()
+            open(LOG_FILE, 'w').close()
+            
+            self.status = "running"
+            self.command_queue.clear()
+            
+            # Verify path
+            cwd = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+            full_model_path = os.path.abspath(model_path)
+            if not os.path.exists(full_model_path):
+                 # Try relative to cwd
+                 full_model_path = os.path.join(cwd, model_path)
+                 if not os.path.exists(full_model_path):
+                     raise ValueError(f"Model path does not exist: {model_path}")
+            
+            cmd_upload = [
+                sys.executable,
+                "-m", "backend.scripts.upload_hf",
+                "--repo-id", repo_id,
+                "--folder", full_model_path,
+                "--token", hf_token
+            ]
+            
+            self.command_queue.append(("Uploading to HF", cmd_upload))
+            
+            # Store pipeline steps for status tracking
+            self.pipeline_steps = ["Uploading to HF"]
+            self.current_step_index = 0
+
+            self.logs.append(f"[SYSTEM] Upload task started for {model_path}")
+            self._start_next_task()
+
     def _start_next_task(self):
         if not self.command_queue:
             with self.lock:

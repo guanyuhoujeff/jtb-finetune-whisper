@@ -6,7 +6,7 @@ from glob import glob
 from typing import Iterable, List
 import pandas as pd
 from tqdm import tqdm
-from handler import MinioHandler
+from .minio_utils import MinioHandler
 import shutil
 import random
 from pathlib import Path
