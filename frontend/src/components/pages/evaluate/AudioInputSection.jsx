@@ -13,14 +13,14 @@ const AudioInputSection = ({
     fileFilter,
     setFileFilter,
     bucketFiles,
-    selectedFile,
-    setSelectedFile,
+    selectedFiles,
+    setSelectedFiles,
     bucketPage,
     setBucketPage,
     bucketLimit,
     bucketTotal,
-    uploadedFile,
-    setUploadedFile,
+    uploadedFiles,
+    setUploadedFiles,
     selectedDeviceId,
     setSelectedDeviceId,
     audioDevices,
@@ -71,8 +71,8 @@ const AudioInputSection = ({
                         fileFilter={fileFilter}
                         setFileFilter={setFileFilter}
                         bucketFiles={bucketFiles}
-                        selectedFile={selectedFile}
-                        setSelectedFile={setSelectedFile}
+                        selectedFiles={selectedFiles}
+                        setSelectedFiles={setSelectedFiles}
                         bucketPage={bucketPage}
                         setBucketPage={setBucketPage}
                         bucketLimit={bucketLimit}
@@ -80,12 +80,10 @@ const AudioInputSection = ({
                     />
                 )}
 
-                {audioTab === 'upload' && (
-                    <FileUploadInput
-                        uploadedFile={uploadedFile}
-                        setUploadedFile={setUploadedFile}
-                    />
-                )}
+                <FileUploadInput
+                    uploadedFiles={uploadedFiles}
+                    setUploadedFiles={setUploadedFiles}
+                />
 
                 {audioTab === 'mic' && (
                     <MicInput
@@ -103,7 +101,7 @@ const AudioInputSection = ({
             {/* Run Button */}
             <button
                 onClick={runInference}
-                disabled={isProcessing || !modelA.name}
+                disabled={isProcessing || !modelA.name || (audioTab === 'bucket' && selectedFiles.length === 0) || (audioTab === 'upload' && uploadedFiles.length === 0)}
                 className={`mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold transition-all shadow-lg ${isProcessing
                     ? 'bg-slate-700 cursor-wait'
                     : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-900/30'
@@ -118,6 +116,8 @@ const AudioInputSection = ({
                     <>
                         <Play size={18} />
                         {compareMode ? 'Compare Models' : 'Run Inference'}
+                        {selectedFiles.length > 1 && audioTab === 'bucket' && <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full ml-1">{selectedFiles.length} files</span>}
+                        {uploadedFiles.length > 1 && audioTab === 'upload' && <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full ml-1">{uploadedFiles.length} files</span>}
                     </>
                 )}
             </button>

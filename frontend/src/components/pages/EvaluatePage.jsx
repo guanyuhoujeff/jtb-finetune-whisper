@@ -21,8 +21,8 @@ const EvaluatePage = ({ apiBaseUrl }) => {
     const [availableBuckets, setAvailableBuckets] = useState([]);
     const [selectedBucket, setSelectedBucket] = useState('');
     const [bucketFiles, setBucketFiles] = useState([]);
-    const [selectedFile, setSelectedFile] = useState('');
-    const [uploadedFile, setUploadedFile] = useState(null);
+    const [selectedFiles, setSelectedFiles] = useState([]); // Changed from single string to array
+    const [uploadedFiles, setUploadedFiles] = useState([]); // Changed from single file to array
     const [fileFilter, setFileFilter] = useState('');  // Search filter for bucket files
 
     // Pagination for bucket files
@@ -44,8 +44,10 @@ const EvaluatePage = ({ apiBaseUrl }) => {
     // Results
     const [resultA, setResultA] = useState(null);
     const [resultB, setResultB] = useState(null);
+    const [batchResults, setBatchResults] = useState([]); // New state for batch results
     const [comparison, setComparison] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [processingStatus, setProcessingStatus] = useState(''); // New state for progress status
 
     // Fetch models and buckets on mount
     useEffect(() => {
@@ -140,7 +142,8 @@ const EvaluatePage = ({ apiBaseUrl }) => {
     // Reset page when bucket changes
     useEffect(() => {
         setBucketPage(1);
-        setSelectedFile('');
+        setSelectedFiles([]);
+        setUploadedFiles([]); // Clear uploads when switching buckets (optional, but good cleanup)
     }, [selectedBucket]);
 
     // Fetch audio input devices
@@ -214,33 +217,73 @@ const EvaluatePage = ({ apiBaseUrl }) => {
         setIsProcessing(true);
         setResultA(null);
         setResultB(null);
+        setBatchResults([]);
         setComparison(null);
+        setProcessingStatus('');
 
         try {
-            if (audioTab === 'upload' && uploadedFile) {
-                // Use form data for file upload
-                const formData = new FormData();
-                formData.append('model_name', modelA.name);
-                formData.append('source', modelA.source);
-                if (modelA.variant) formData.append('variant', modelA.variant);
-                formData.append('audio_file', uploadedFile);
+            if (audioTab === 'upload' && uploadedFiles.length > 0) {
+                // Batch Processing Logic for Uploads
+                for (let i = 0; i < uploadedFiles.length; i++) {
+                    const file = uploadedFiles[i];
+                    setProcessingStatus(`Processing ${i + 1}/${uploadedFiles.length}: ${file.name}`);
 
-                const res = await axios.post(`${apiBaseUrl}/evaluate/infer-upload`, formData);
-                setResultA(res.data);
+                    try {
+                        let currentResult = {
+                            id: `upload-${i}`, // distinct ID
+                            fileName: file.name,
+                            status: 'pending',
+                            resultA: null,
+                            resultB: null,
+                            comparison: null,
+                            error: null
+                        };
 
-                // Compare if enabled
-                if (compareMode && modelB.name) {
-                    const formDataB = new FormData();
-                    formDataB.append('model_name', modelB.name);
-                    formDataB.append('source', modelB.source);
-                    if (modelB.variant) formDataB.append('variant', modelB.variant);
-                    formDataB.append('audio_file', uploadedFile);
+                        // Use form data for file upload
+                        const formData = new FormData();
+                        formData.append('model_name', modelA.name);
+                        formData.append('source', modelA.source);
+                        if (modelA.variant) formData.append('variant', modelA.variant);
+                        formData.append('audio_file', file);
 
-                    const resB = await axios.post(`${apiBaseUrl}/evaluate/infer-upload`, formDataB);
-                    setResultB(resB.data);
+                        const res = await axios.post(`${apiBaseUrl}/evaluate/infer-upload`, formData);
+                        currentResult.resultA = res.data;
+
+                        // Compare if enabled
+                        if (compareMode && modelB.name) {
+                            const formDataB = new FormData();
+                            formDataB.append('model_name', modelB.name);
+                            formDataB.append('source', modelB.source);
+                            if (modelB.variant) formDataB.append('variant', modelB.variant);
+                            formDataB.append('audio_file', file);
+
+                            const resB = await axios.post(`${apiBaseUrl}/evaluate/infer-upload`, formDataB);
+                            currentResult.resultB = resB.data;
+
+                            // Calculate comparison locally since we don't have a direct compare-upload endpoint yet
+                            // Or we could add one, but for now let's just show side-by-side
+                            // Ideally we should have a backend endpoint for comparing uploads to ensure synchronization
+                            // For this iteration, we'll just show the two results.
+                        }
+
+                        currentResult.status = 'success';
+                        setBatchResults(prev => [...prev, currentResult]);
+
+                    } catch (err) {
+                        console.error(`Failed to process ${file.name}`, err);
+                        setBatchResults(prev => [...prev, {
+                            id: `upload-${i}`,
+                            fileName: file.name,
+                            status: 'error',
+                            error: err.response?.data?.detail || err.message
+                        }]);
+                    }
                 }
+                setIsProcessing(false);
+                return;
+
             } else if (audioTab === 'mic' && recordedAudio) {
-                // Convert blob to base64
+                // ... (existing mic logic)
                 const reader = new FileReader();
                 reader.onloadend = async () => {
                     const base64 = reader.result.split(',')[1];
@@ -268,27 +311,68 @@ const EvaluatePage = ({ apiBaseUrl }) => {
                 };
                 reader.readAsDataURL(recordedAudio);
                 return;
-            } else if (audioTab === 'bucket' && selectedFile) {
-                if (compareMode && modelB.name) {
-                    const res = await axios.post(`${apiBaseUrl}/evaluate/compare`, {
-                        model_a: modelA,
-                        model_b: modelB,
-                        audio_source: 'bucket',
-                        bucket_name: selectedBucket,
-                        file_name: selectedFile
-                    });
-                    setResultA(res.data.model_a);
-                    setResultB(res.data.model_b);
-                    setComparison(res.data.comparison);
-                } else {
-                    const res = await axios.post(`${apiBaseUrl}/evaluate/infer`, {
-                        ...modelA,
-                        model_name: modelA.name,
-                        audio_source: 'bucket',
-                        bucket_name: selectedBucket,
-                        file_name: selectedFile
-                    });
-                    setResultA(res.data);
+            } else if (audioTab === 'bucket' && selectedFiles.length > 0) {
+                // Batch Processing Logic
+                const results = [];
+                for (let i = 0; i < selectedFiles.length; i++) {
+                    const fileName = selectedFiles[i];
+                    setProcessingStatus(`Processing ${i + 1}/${selectedFiles.length}: ${fileName}`);
+
+                    try {
+                        let currentResult = {
+                            id: i,
+                            fileName: fileName,
+                            status: 'pending',
+                            resultA: null,
+                            resultB: null,
+                            comparison: null,
+                            error: null
+                        };
+
+                        if (compareMode && modelB.name) {
+                            const res = await axios.post(`${apiBaseUrl}/evaluate/compare`, {
+                                model_a: modelA,
+                                model_b: modelB,
+                                audio_source: 'bucket',
+                                bucket_name: selectedBucket,
+                                file_name: fileName
+                            });
+                            currentResult.status = 'success';
+                            currentResult.resultA = res.data.model_a;
+                            currentResult.resultB = res.data.model_b;
+                            currentResult.comparison = res.data.comparison;
+                        } else {
+                            const res = await axios.post(`${apiBaseUrl}/evaluate/infer`, {
+                                ...modelA,
+                                model_name: modelA.name,
+                                audio_source: 'bucket',
+                                bucket_name: selectedBucket,
+                                file_name: fileName
+                            });
+                            currentResult.status = 'success';
+                            currentResult.resultA = res.data;
+                        }
+                        results.push(currentResult);
+                        setBatchResults([...results]); // Update UI progressively
+                    } catch (fileErr) {
+                        console.error(`Error processing ${fileName}`, fileErr);
+                        results.push({
+                            id: i,
+                            fileName: fileName,
+                            status: 'error',
+                            error: fileErr.message
+                        });
+                        setBatchResults([...results]);
+                    }
+                }
+
+                // If only one file was processed successfully, set the main resultA/B state too for backward compatibility/single view
+                if (results.length === 1 && results[0].status === 'success') {
+                    setResultA(results[0].resultA);
+                    if (results[0].resultB) {
+                        setResultB(results[0].resultB);
+                        setComparison(results[0].comparison);
+                    }
                 }
             }
         } catch (err) {
@@ -296,6 +380,7 @@ const EvaluatePage = ({ apiBaseUrl }) => {
             alert("Inference failed: " + (err.response?.data?.detail || err.message));
         } finally {
             setIsProcessing(false);
+            setProcessingStatus('');
         }
     };
 
@@ -343,13 +428,18 @@ const EvaluatePage = ({ apiBaseUrl }) => {
             formData.append('splits', JSON.stringify(splits));
 
             // Audio Source Logic
-            if (audioTab === 'bucket' && selectedFile) {
+            if (audioTab === 'bucket' && selectedFiles.length > 0) {
                 formData.append('audio_source', 'bucket');
                 formData.append('source_bucket', selectedBucket);
-                formData.append('source_file', selectedFile);
-            } else if (audioTab === 'upload' && uploadedFile) {
+                // For batch results, we'll need to handle saving differently (probably inside BatchResultRow)
+                // This logic here applies more to single file selection
+                // The new child component will handle its own saving logic
+                // But if we select "Save" on the main view, we need a file
+                // Let's assume for now this handles the single file case or first file
+                formData.append('source_file', selectedFiles[0]);
+            } else if (audioTab === 'upload' && uploadedFiles.length > 0) {
                 formData.append('audio_source', 'upload');
-                formData.append('audio_file', uploadedFile);
+                formData.append('audio_file', uploadedFiles[0]);
             } else if (audioTab === 'mic' && recordedAudio) {
                 formData.append('audio_source', 'upload');
                 // Convert blob to file
@@ -422,14 +512,14 @@ const EvaluatePage = ({ apiBaseUrl }) => {
                         fileFilter={fileFilter}
                         setFileFilter={setFileFilter}
                         bucketFiles={bucketFiles}
-                        selectedFile={selectedFile}
-                        setSelectedFile={setSelectedFile}
+                        selectedFiles={selectedFiles}
+                        setSelectedFiles={setSelectedFiles}
                         bucketPage={bucketPage}
                         setBucketPage={setBucketPage}
                         bucketLimit={bucketLimit}
                         bucketTotal={bucketTotal}
-                        uploadedFile={uploadedFile}
-                        setUploadedFile={setUploadedFile}
+                        uploadedFiles={uploadedFiles}
+                        setUploadedFiles={setUploadedFiles}
                         selectedDeviceId={selectedDeviceId}
                         setSelectedDeviceId={setSelectedDeviceId}
                         audioDevices={audioDevices}
@@ -449,11 +539,17 @@ const EvaluatePage = ({ apiBaseUrl }) => {
                         resultB={resultB}
                         isProcessing={isProcessing}
                         comparison={comparison}
+                        batchResults={batchResults}
+                        processingStatus={processingStatus}
                         saveConfig={saveConfig}
                         setSaveConfig={setSaveConfig}
                         availableBuckets={availableBuckets}
                         handleSave={handleSave}
                         isSaving={isSaving}
+                        modelA={modelA}
+                        modelB={modelB}
+                        selectedBucket={selectedBucket}
+                        apiBaseUrl={apiBaseUrl}
                     />
                 </div>
             </div>
