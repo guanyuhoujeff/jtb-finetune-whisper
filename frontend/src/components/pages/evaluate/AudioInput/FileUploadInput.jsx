@@ -81,8 +81,8 @@ const FileUploadInput = ({ uploadedFiles = [], setUploadedFiles }) => {
                                     key={`${file.name}-${index}`}
                                     onClick={() => setPreviewIndex(index)}
                                     className={`p-3 rounded-lg border flex items-center justify-between group cursor-pointer transition-all ${isPreviewing
-                                            ? 'bg-indigo-500/20 border-indigo-500/50 ring-1 ring-indigo-500/50'
-                                            : 'bg-slate-800/50 border-slate-700 hover:bg-slate-800'
+                                        ? 'bg-indigo-500/20 border-indigo-500/50 ring-1 ring-indigo-500/50'
+                                        : 'bg-slate-800/50 border-slate-700 hover:bg-slate-800'
                                         }`}
                                 >
                                     <div className="flex items-center gap-3 overflow-hidden">
@@ -110,23 +110,7 @@ const FileUploadInput = ({ uploadedFiles = [], setUploadedFiles }) => {
                             );
                         })}
                     </div>
-                    {/* Audio Preview for the selected file */}
-                    {uploadedFiles.length > 0 && previewIndex !== null && uploadedFiles[previewIndex] && (
-                        <div className="mt-2 bg-slate-900/50 p-2 rounded-lg border border-slate-800">
-                            <div className="flex items-center justify-between mb-1 px-1">
-                                <span className="text-[10px] text-indigo-400 uppercase font-bold">Previewing</span>
-                                <span className="text-xs text-slate-300 truncate max-w-[200px]">{uploadedFiles[previewIndex].name}</span>
-                            </div>
-                            <audio
-                                key={uploadedFiles[previewIndex].name} // Force re-render on file change
-                                controls
-                                autoPlay
-                                src={URL.createObjectURL(uploadedFiles[previewIndex])}
-                                className="w-full h-8 rounded-lg"
-                                style={{ filter: 'invert(1) hue-rotate(180deg)', opacity: 0.8 }}
-                            />
-                        </div>
-                    )}
+
                 </div>
             )}
         </div>

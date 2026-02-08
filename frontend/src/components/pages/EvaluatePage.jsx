@@ -125,14 +125,14 @@ const EvaluatePage = ({ apiBaseUrl }) => {
                 setBucketTotal(total);
 
                 // Only auto-select first file if on first page and no file selected
-                if (audioFiles.length > 0 && !selectedFile) {
-                    setSelectedFile(audioFiles[0].file_name);
+                if (audioFiles.length > 0 && selectedFiles.length === 0) {
+                    setSelectedFiles([audioFiles[0].file_name]);
                 }
             } catch (err) {
                 console.error("Failed to fetch files", err);
                 setBucketFiles([]);
                 setBucketTotal(0);
-                setSelectedFile('');
+                setSelectedFiles([]);
             }
         };
 
@@ -232,6 +232,7 @@ const EvaluatePage = ({ apiBaseUrl }) => {
                         let currentResult = {
                             id: `upload-${i}`, // distinct ID
                             fileName: file.name,
+                            file: file, // Pass file object for playback
                             status: 'pending',
                             resultA: null,
                             resultB: null,
@@ -319,9 +320,13 @@ const EvaluatePage = ({ apiBaseUrl }) => {
                     setProcessingStatus(`Processing ${i + 1}/${selectedFiles.length}: ${fileName}`);
 
                     try {
+                        // Find the original file object to get audio_url
+                        const originalFile = bucketFiles.find(f => f.file_name === fileName);
+
                         let currentResult = {
                             id: i,
                             fileName: fileName,
+                            audioUrl: originalFile?.audio_url, // Pass audio url
                             status: 'pending',
                             resultA: null,
                             resultB: null,

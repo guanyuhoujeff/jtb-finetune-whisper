@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Play, Check, Save, Loader2, AlertCircle, FileAudio } from 'lucide-react';
 import axios from 'axios';
 
@@ -9,6 +9,26 @@ const BatchResultRow = ({ result, modelA, modelB, compareMode, availableBuckets,
     );
     const [isSaving, setIsSaving] = useState(false);
     const [saveStatus, setSaveStatus] = useState(null); // 'success', 'error', null
+    const [audioSrc, setAudioSrc] = useState(null);
+
+    // Manage audio source URL (handle Blob URLs correctly)
+    useEffect(() => {
+        let url = null;
+        if (result.file) {
+            url = URL.createObjectURL(result.file);
+            setAudioSrc(url);
+        } else if (result.audioUrl) {
+            setAudioSrc(result.audioUrl);
+        } else {
+            setAudioSrc(null);
+        }
+
+        return () => {
+            if (url) {
+                URL.revokeObjectURL(url);
+            }
+        };
+    }, [result.file, result.audioUrl]);
 
     // Determine status color
     const getStatusColor = () => {
@@ -34,18 +54,16 @@ const BatchResultRow = ({ result, modelA, modelB, compareMode, availableBuckets,
             const splits = Object.keys(saveConfig.splits).filter(k => saveConfig.splits[k]);
             formData.append('splits', JSON.stringify(splits));
 
-            formData.append('audio_source', 'bucket');
-            // Assuming we stick to the currently selected bucket from main state which should be passed down
-            // But wait, we need the source bucket name.
-            // In the main EvaluatePage, we are using `selectedBucket`
-            // We should probably rely on the parent to provide context or pass it explicitly.
-            // For now let's assume `saveConfig.bucket` is the TARGET, but where is SOURCE?
-            // The `result` object has `fileName`, but not bucket. 
-            // We might need to pass `sourceBucket` as prop to BatchResultRow.
-            // OR we assume the `audio_url` in result might help, but backend needs bucket+filename.
-            // Let's assume we pass `sourceBucket` prop.
-            formData.append('source_bucket', result.sourceBucket);
-            formData.append('source_file', result.fileName);
+            // Check if this is an uploaded file result
+            if (result.file) {
+                formData.append('audio_source', 'upload');
+                formData.append('audio_file', result.file);
+            } else {
+                // Assume bucket file
+                formData.append('audio_source', 'bucket');
+                formData.append('source_bucket', result.sourceBucket || saveConfig.bucket); // Fallback if sourceBucket missing
+                formData.append('source_file', result.fileName);
+            }
 
             await axios.post(`${apiBaseUrl}/evaluate/save`, formData);
             setSaveStatus('success');
@@ -116,6 +134,20 @@ const BatchResultRow = ({ result, modelA, modelB, compareMode, availableBuckets,
             {/* Expanded Content */}
             {isExpanded && result.status === 'success' && (
                 <div className="p-4 border-t border-slate-700/50 bg-slate-900/30 space-y-3">
+                    {/* Audio Player */}
+                    {audioSrc && (
+                        <div className="mb-3">
+                            <label className="text-xs text-slate-500 font-medium uppercase mb-1 block">Audio</label>
+                            <audio
+                                controls
+                                src={audioSrc}
+                                className="w-full h-8"
+                                onError={(e) => console.error("Audio playback error:", e.target.error, audioSrc)}
+                                preload="metadata"
+                            />
+                        </div>
+                    )}
+
                     {/* Transcription Editor */}
                     <div>
                         <label className="text-xs text-slate-500 font-medium uppercase mb-1 block">Transcription</label>

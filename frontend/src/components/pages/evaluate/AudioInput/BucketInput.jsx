@@ -175,19 +175,7 @@ const BucketInput = ({
                             <span className="text-sm font-medium text-indigo-300">
                                 {selectedFiles.length} file{selectedFiles.length !== 1 && 's'} selected
                             </span>
-                            {/* Only show player for the last selected file as a preview */}
-                            {bucketFiles.find(f => f.file_name === selectedFiles[selectedFiles.length - 1])?.audio_url && (
-                                <span className="text-xs text-slate-500">Last selected preview</span>
-                            )}
                         </div>
-                        {bucketFiles.find(f => f.file_name === selectedFiles[selectedFiles.length - 1])?.audio_url && (
-                            <audio
-                                controls
-                                src={bucketFiles.find(f => f.file_name === selectedFiles[selectedFiles.length - 1]).audio_url}
-                                className="w-full h-8 rounded-lg"
-                                style={{ filter: 'invert(1) hue-rotate(180deg)', opacity: 0.8 }}
-                            />
-                        )}
                     </div>
                 )
             }
