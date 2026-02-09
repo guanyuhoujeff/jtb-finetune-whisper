@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Play, Square, Terminal, Settings, Activity, ChevronRight, Check, Loader2, Database, Brain, Merge, Zap, Upload, AlertCircle } from 'lucide-react';
+import { Play, Square, Terminal, Settings, Activity, ChevronRight, Check, Loader2, Database, Brain, Merge, Zap, AlertCircle } from 'lucide-react';
 
 // Pipeline Step Component
 const PipelineStep = ({ name, icon: Icon, status, isLast }) => {
@@ -78,7 +78,6 @@ const PipelineProgress = ({ steps, currentStepIndex, pipelineStatus }) => {
         'Training': Brain,
         'Merging': Merge,
         'Converting': Zap,
-        'Uploading': Upload,
         'Loading Data': Database
     };
 
@@ -130,10 +129,7 @@ const TrainingPage = ({ apiBaseUrl }) => {
         per_device_train_batch_size: 1,
         learning_rate: 0.0001,
         do_merge: false,
-        do_convert: false,
-        do_upload: false,
-        hf_repo_id: '',
-        hf_token: ''
+        do_convert: false
     });
     const [availableModels, setAvailableModels] = useState([]);
     const [availableBuckets, setAvailableBuckets] = useState([]);
@@ -490,52 +486,7 @@ const TrainingPage = ({ apiBaseUrl }) => {
                                     </label>
                                 </div>
 
-                                {/* Upload */}
-                                <div className="space-y-3 pt-2 border-t border-slate-800">
-                                    <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-800/30 hover:bg-slate-800/50 cursor-pointer border border-slate-700/50">
-                                        <input
-                                            type="checkbox"
-                                            name="do_upload"
-                                            checked={config.do_upload}
-                                            onChange={handleChange}
-                                            disabled={status === 'running'}
-                                            className="rounded border-slate-700 bg-slate-800 text-indigo-600 focus:ring-indigo-500"
-                                        />
-                                        <div>
-                                            <span className="text-sm text-slate-300 font-medium">Upload to Hugging Face</span>
-                                            <p className="text-xs text-slate-500">Push model to HF Hub</p>
-                                        </div>
-                                    </label>
 
-                                    {config.do_upload && (
-                                        <div className="space-y-3 pl-4 border-l-2 border-indigo-500/30 ml-2">
-                                            <div className="space-y-1">
-                                                <label className="text-xs text-slate-500 font-medium uppercase">Repo ID</label>
-                                                <input
-                                                    type="text"
-                                                    name="hf_repo_id"
-                                                    value={config.hf_repo_id}
-                                                    onChange={handleChange}
-                                                    disabled={status === 'running'}
-                                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 placeholder:text-slate-600 disabled:opacity-50"
-                                                    placeholder="username/repo"
-                                                />
-                                            </div>
-                                            <div className="space-y-1">
-                                                <label className="text-xs text-slate-500 font-medium uppercase">HF Token</label>
-                                                <input
-                                                    type="password"
-                                                    name="hf_token"
-                                                    value={config.hf_token}
-                                                    onChange={handleChange}
-                                                    disabled={status === 'running'}
-                                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 placeholder:text-slate-600 disabled:opacity-50"
-                                                    placeholder="hf_..."
-                                                />
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
 
                                 <div className="pt-4">
                                     <button
@@ -558,7 +509,7 @@ const TrainingPage = ({ apiBaseUrl }) => {
                             </div>
                             <div className="flex-1 flex items-center justify-center bg-slate-900/30 rounded-xl border border-slate-800">
                                 <PipelineProgress
-                                    steps={['Training', ...(config.do_merge ? ['Merging'] : []), ...(config.do_convert ? ['Converting'] : []), ...(config.do_upload ? ['Uploading'] : [])]}
+                                    steps={['Training', ...(config.do_merge ? ['Merging'] : []), ...(config.do_convert ? ['Converting'] : [])]}
                                     currentStepIndex={-1}
                                     pipelineStatus="idle"
                                 />

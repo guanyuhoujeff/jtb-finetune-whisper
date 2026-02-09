@@ -121,18 +121,11 @@ docker run -d \
 cd backend
 docker build -f Dockerfile -t jtb-cuda-env \
   --build-arg CUDA_VER=12.8 \
-  
-**前端映像**：
-```bash
-cd frontend
-docker build -f Dockerfile -t jtb-frontend-env .
-
 ```
 
 #### 3️⃣ 啟動後端 API
 
 docker rm -f jtb-finetune-backend jtb-finetune-frontend
-docker rm -f jtb-finetune-frontend
 ```bash
 cd <專案根目錄>
 docker run  -d \
@@ -147,7 +140,11 @@ docker run  -d \
 #### 4️⃣ 啟動前端
 
 ```bash
-cd  <專案根目錄>/frontend
+cd frontend
+
+
+docker rm -f jtb-finetune-frontend
+docker build -f Dockerfile -t jtb-frontend-env .
 docker run -d \
   --name jtb-finetune-frontend \
   --restart=always \

@@ -11,7 +11,17 @@ const UploadPage = ({ apiBaseUrl }) => {
     const [isUploading, setIsUploading] = useState(false);
     const [status, setStatus] = useState('idle');
     const [logs, setLogs] = useState([]);
+    const [rememberToken, setRememberToken] = useState(false);
     const logsEndRef = useRef(null);
+
+    // Load token from localStorage
+    useEffect(() => {
+        const savedToken = localStorage.getItem('hf_token');
+        if (savedToken) {
+            setHfToken(savedToken);
+            setRememberToken(true);
+        }
+    }, []);
 
     // Fetch models on load
     useEffect(() => {
@@ -80,6 +90,13 @@ const UploadPage = ({ apiBaseUrl }) => {
         if (!selectedModel || !repoId || !hfToken) {
             alert("Please fill in all fields.");
             return;
+        }
+
+        // Save or clear token based on remember preference
+        if (rememberToken) {
+            localStorage.setItem('hf_token', hfToken);
+        } else {
+            localStorage.removeItem('hf_token');
         }
 
         try {
@@ -177,6 +194,16 @@ const UploadPage = ({ apiBaseUrl }) => {
                                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 placeholder:text-slate-600"
                                 />
                                 <p className="text-xs text-slate-500">Token with write permissions required</p>
+
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={rememberToken}
+                                        onChange={(e) => setRememberToken(e.target.checked)}
+                                        className="rounded border-slate-700 bg-slate-800 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    <span className="text-xs text-slate-400 select-none">Remember Access Token</span>
+                                </label>
                             </div>
                         </div>
 
@@ -186,8 +213,8 @@ const UploadPage = ({ apiBaseUrl }) => {
                                 onClick={handleUpload}
                                 disabled={isUploading}
                                 className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold transition-all shadow-lg ${isUploading
-                                        ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                                        : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-indigo-900/30'
+                                    ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                                    : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-indigo-900/30'
                                     }`}
                             >
                                 {isUploading ? (
@@ -229,7 +256,7 @@ const UploadPage = ({ apiBaseUrl }) => {
                             <div className="space-y-1">
                                 {logs.map((log, i) => (
                                     <div key={i} className={`${log.includes('[ERROR]') ? 'text-red-400' :
-                                            log.includes('[SYSTEM]') ? 'text-indigo-400' : 'text-slate-300'
+                                        log.includes('[SYSTEM]') ? 'text-indigo-400' : 'text-slate-300'
                                         }`}>
                                         {log}
                                     </div>
