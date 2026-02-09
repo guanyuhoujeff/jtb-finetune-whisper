@@ -21,7 +21,8 @@ const ResultsDisplay = ({
     modelA,
     modelB,
     selectedBucket, // Need this to pass to BatchResultRow
-    apiBaseUrl
+    apiBaseUrl,
+    onRemoveResult // New prop
 }) => {
     // Determine if we are in batch mode
     const isBatchMode = batchResults.length > 0;
@@ -79,6 +80,7 @@ const ResultsDisplay = ({
                             availableBuckets={availableBuckets}
                             apiBaseUrl={apiBaseUrl}
                             saveConfig={saveConfig}
+                            onRemoveResult={onRemoveResult}
                         />
                     ))}
                 </div>

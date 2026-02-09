@@ -470,6 +470,10 @@ const EvaluatePage = ({ apiBaseUrl }) => {
         }
     };
 
+    const handleRemoveResult = (id) => {
+        setBatchResults(prev => prev.filter(r => r.id !== id));
+    };
+
     return (
         <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden">
             {/* Header */}
@@ -555,6 +559,7 @@ const EvaluatePage = ({ apiBaseUrl }) => {
                         modelB={modelB}
                         selectedBucket={selectedBucket}
                         apiBaseUrl={apiBaseUrl}
+                        onRemoveResult={handleRemoveResult}
                     />
                 </div>
             </div>

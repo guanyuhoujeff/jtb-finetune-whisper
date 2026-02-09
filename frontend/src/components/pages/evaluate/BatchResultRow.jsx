@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Play, Check, Save, Loader2, AlertCircle, FileAudio } from 'lucide-react';
 import axios from 'axios';
 
-const BatchResultRow = ({ result, modelA, modelB, compareMode, availableBuckets, apiBaseUrl, saveConfig }) => {
+const BatchResultRow = ({ result, modelA, modelB, compareMode, availableBuckets, apiBaseUrl, saveConfig, onRemoveResult }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [transcription, setTranscription] = useState(
         result.resultA ? (result.resultA.transcription || '') : ''
@@ -67,7 +67,12 @@ const BatchResultRow = ({ result, modelA, modelB, compareMode, availableBuckets,
 
             await axios.post(`${apiBaseUrl}/evaluate/save`, formData);
             setSaveStatus('success');
-            setTimeout(() => setSaveStatus(null), 3000);
+            setTimeout(() => {
+                setSaveStatus(null);
+                if (onRemoveResult) {
+                    onRemoveResult(result.id);
+                }
+            }, 1000); // Wait a bit to show success state before removing
         } catch (err) {
             console.error("Save failed", err);
             setSaveStatus('error');
