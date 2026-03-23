@@ -16,16 +16,21 @@ class MinioClientWrapper:
             secret_key=secret_key,
             secure=secure
         )
+        # Separate client for presigned URLs so the signature matches the
+        # host the browser will actually use.
+        ext = external_endpoint or endpoint
+        self._presign_client = Minio(
+            ext,
+            access_key=access_key,
+            secret_key=secret_key,
+            secure=secure,
+        ) if ext != endpoint else self.client
 
     def list_buckets(self):
         return self.client.list_buckets()
 
     def get_presigned_url(self, bucket_name, object_name):
-        url = self.client.get_presigned_url("GET", bucket_name, object_name)
-        if self.external_endpoint and self.endpoint != self.external_endpoint:
-            # Replace internal endpoint with external one for browser access
-            return url.replace(self.endpoint, self.external_endpoint)
-        return url
+        return self._presign_client.get_presigned_url("GET", bucket_name, object_name)
 
     def get_object(self, bucket_name, object_name):
         return self.client.get_object(bucket_name, object_name)
@@ -60,8 +65,15 @@ class MinioClientWrapper:
             endpoint,
             access_key=access_key,
             secret_key=secret_key,
-            secure=secure
+            secure=secure,
         )
+        ext = external_endpoint or endpoint
+        self._presign_client = Minio(
+            ext,
+            access_key=access_key,
+            secret_key=secret_key,
+            secure=secure,
+        ) if ext != endpoint else self.client
 
 # Default configuration from environment variables
 # Internal endpoint for backend connection (default to docker service name)

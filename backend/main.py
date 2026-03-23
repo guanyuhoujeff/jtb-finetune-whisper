@@ -1,30 +1,78 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Body
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Body, Request
 import warnings
 warnings.filterwarnings("ignore")
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from backend.services.minio_client import minio_client, MINIO_ENDPOINT, BUCKET_NAME
 from backend.services.dataset_manager import dataset_manager
 from pydantic import BaseModel
 from typing import Optional
 import uvicorn
 import shutil
+import os
+import secrets
 
 app = FastAPI()
 
-# CORS configuration
-origins = [
-    "http://localhost:5173",  # Vite default
-    "http://127.0.0.1:5173",
-    "*"
-]
+def _build_cors_origins() -> list[str]:
+    configured = os.getenv(
+        "BACKEND_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    )
+    origins = [origin.strip() for origin in configured.split(",") if origin.strip()]
+    if "*" in origins:
+        return ["*"]
+    return origins
+
+
+def _allow_cors_credentials(origins: list[str]) -> bool:
+    # Browsers disallow wildcard origins with credentials.
+    return "*" not in origins
+
+
+def _is_api_request_authorized(
+    path: str, method: str, headers: dict, configured_api_key: str
+) -> bool:
+    if not path.startswith("/api") or method.upper() == "OPTIONS":
+        return True
+    if not configured_api_key:
+        return True
+    request_key = headers.get("x-api-key", "")
+    return secrets.compare_digest(request_key, configured_api_key)
+
+
+def _safe_remove_temp_file(path: Optional[str]) -> None:
+    if not path:
+        return
+    try:
+        os.remove(path)
+    except Exception:
+        pass
+
+
+API_KEY = os.getenv("BACKEND_API_KEY", "").strip()
+origins = _build_cors_origins()
+allow_credentials = _allow_cors_credentials(origins)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def api_key_guard(request: Request, call_next):
+    if not _is_api_request_authorized(
+        request.url.path, request.method, request.headers, API_KEY
+    ):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Unauthorized. Missing or invalid x-api-key."},
+        )
+    return await call_next(request)
 
 class TranscriptionUpdate(BaseModel):
     bucket_name: str
@@ -383,11 +431,7 @@ def _get_audio_path(audio_source: str, bucket_name: Optional[str], file_name: Op
         try:
             minio_client.client.fget_object(bucket_name, object_name, temp_path)
         except Exception as e:
-            # Clean up temp file on error
-            try:
-                os_module.remove(temp_path)
-            except:
-                pass
+            _safe_remove_temp_file(temp_path)
             raise ValueError(f"File not found in bucket: {bucket_name}/{object_name}. Error: {str(e)}")
         return temp_path
     elif audio_source == "recording" and audio_base64:
@@ -400,6 +444,7 @@ def _get_audio_path(audio_source: str, bucket_name: Optional[str], file_name: Op
 async def infer_single(request: InferRequest):
     """Run inference with a single model."""
     import traceback
+    audio_path = None
     try:
         audio_path = _get_audio_path(
             request.audio_source,
@@ -414,13 +459,7 @@ async def infer_single(request: InferRequest):
             variant=request.variant,
             audio_path=audio_path
         )
-        
-        # Clean up temp file
-        try:
-            os_module.remove(audio_path)
-        except:
-            pass
-        
+
         return {
             "transcription": result.transcription,
             "confidence": result.confidence,
@@ -431,6 +470,8 @@ async def infer_single(request: InferRequest):
         print(f"[EVALUATE ERROR] {str(e)}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        _safe_remove_temp_file(audio_path)
 
 
 @app.post("/api/evaluate/infer-upload")
@@ -441,6 +482,7 @@ async def infer_with_upload(
     audio_file: UploadFile = File(...)
 ):
     """Run inference with an uploaded audio file."""
+    temp_path = None
     try:
         # Save uploaded file to temp
         fd, temp_path = tempfile.mkstemp(suffix=".wav")
@@ -454,13 +496,7 @@ async def infer_with_upload(
             variant=variant,
             audio_path=temp_path
         )
-        
-        # Clean up
-        try:
-            os_module.remove(temp_path)
-        except:
-            pass
-        
+
         return {
             "transcription": result.transcription,
             "confidence": result.confidence,
@@ -469,11 +505,14 @@ async def infer_with_upload(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        _safe_remove_temp_file(temp_path)
 
 
 @app.post("/api/evaluate/compare")
 async def compare_models(request: CompareRequest):
     """Compare two models on the same audio."""
+    audio_path = None
     try:
         audio_path = _get_audio_path(
             request.audio_source,
@@ -487,16 +526,12 @@ async def compare_models(request: CompareRequest):
             model_b=request.model_b,
             audio_path=audio_path
         )
-        
-        # Clean up temp file
-        try:
-            os_module.remove(audio_path)
-        except:
-            pass
-        
+
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        _safe_remove_temp_file(audio_path)
 
 
 

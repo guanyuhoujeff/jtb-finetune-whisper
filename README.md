@@ -128,13 +128,16 @@ docker build -f Dockerfile -t jtb-cuda-env \
 docker rm -f jtb-finetune-backend jtb-finetune-frontend
 ```bash
 cd <專案根目錄>
-docker run  -d \
+docker run -d \
   --name jtb-finetune-backend \
   --restart=always \
   --gpus all --network host \
+  -e BACKEND_CORS_ORIGINS="*" \
+  -e MINIO_ENDPOINT="localhost:9000" \
+  -e MINIO_EXTERNAL_ENDPOINT="192.168.1.37:9000" \
   -v $(pwd):/workspace \
   jtb-cuda-env \
-  python -m uvicorn backend.main:app --host 0.0.0.0 --port 42045
+  python -m uvicorn backend.main:app --host 0.0.0.0 --port 42045  
 ```
 
 #### 4️⃣ 啟動前端
