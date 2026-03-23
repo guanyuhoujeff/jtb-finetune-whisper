@@ -291,6 +291,33 @@ const App = () => {
         }
     };
 
+    const handleBatchDownload = async () => {
+        try {
+            setLoading(true);
+            const res = await axios.post(
+                `${apiBaseUrl}/dataset/batch/download`,
+                {
+                    bucket_name: bucket,
+                    split: split,
+                    file_names: selectedIds,
+                },
+                { responseType: "blob" }
+            );
+            const url = window.URL.createObjectURL(res.data);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${bucket}_${split}_selected.zip`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            alert("Download failed: " + (err.response?.data?.detail || err.message));
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleCloneBucket = async (newBucketName) => {
         try {
             const res = await axios.post(`${apiBaseUrl}/buckets/clone`, {
@@ -385,6 +412,7 @@ const App = () => {
                         onBatchDelete={handleBatchDelete}
                         onBatchTag={() => setIsBatchTagOpen(true)}
                         onBatchCopy={() => setIsCopyBucketModalOpen(true)}
+                        onBatchDownload={handleBatchDownload}
                         onUploadClick={() => setIsUploadOpen(true)}
                         onBulkUploadClick={() => setIsBulkUploadOpen(true)}
                     />

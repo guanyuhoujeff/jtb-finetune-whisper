@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Body, Reques
 import warnings
 warnings.filterwarnings("ignore")
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from backend.services.minio_client import minio_client, MINIO_ENDPOINT, BUCKET_NAME
 from backend.services.dataset_manager import dataset_manager
 from pydantic import BaseModel
@@ -201,6 +201,56 @@ def batch_copy(req: BatchCopyRequest):
         return {"status": "success", "copied_count": count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dataset/batch/download")
+def batch_download(req: BatchOperationRequest):
+    """Download selected audio files and their metadata as a ZIP archive."""
+    import zipfile
+    from io import BytesIO
+
+    try:
+        buf = BytesIO()
+        rows = dataset_manager.get_rows_metadata(req.bucket_name, req.split, req.file_names)
+
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            # Write metadata CSV
+            csv_lines = ["file_name,transcription,tags,description"]
+            for row in rows:
+                # Escape fields for CSV
+                fields = [
+                    row.get("file_name", ""),
+                    row.get("transcription", ""),
+                    row.get("tags", ""),
+                    row.get("description", ""),
+                ]
+                csv_lines.append(",".join(
+                    f'"{f.replace(chr(34), chr(34)+chr(34))}"' for f in fields
+                ))
+            zf.writestr("metadata.csv", "\n".join(csv_lines))
+
+            # Write audio files
+            for row in rows:
+                fname = row.get("file_name", "")
+                object_name = f"{req.split}/audio/{fname}"
+                try:
+                    resp = minio_client.get_object(req.bucket_name, object_name)
+                    zf.writestr(f"audio/{fname}", resp.read())
+                    resp.close()
+                    resp.release_conn()
+                except Exception as e:
+                    print(f"Skipping {fname}: {e}")
+
+        buf.seek(0)
+        archive_name = f"{req.bucket_name}_{req.split}_selected.zip"
+        return StreamingResponse(
+            buf,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{archive_name}"'},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/upload")
 async def upload_audio(

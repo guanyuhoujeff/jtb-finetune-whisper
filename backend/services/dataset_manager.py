@@ -275,6 +275,18 @@ class DatasetManager:
             print(f"Error in bulk upload: {e}")
             raise e
 
+    def get_rows_metadata(self, bucket_name: str, split: str, file_names: list[str]) -> list[dict]:
+        """Return metadata dicts for the given file names."""
+        csv_key = f"{split}/metadata.csv"
+        response = self.client.get_object(bucket_name, csv_key)
+        csv_content = response.read()
+        response.close()
+        response.release_conn()
+
+        df = pd.read_csv(BytesIO(csv_content), dtype=str, keep_default_na=False)
+        matched = df[df["file_name"].isin(file_names)]
+        return matched.to_dict(orient="records")
+
     def delete_rows(self, bucket_name: str, split: str, file_names: list[str]):
         """
         Batch delete rows from metadata.csv and delete associated audio files from MinIO.

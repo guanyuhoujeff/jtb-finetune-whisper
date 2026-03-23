@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Trash2, Tag, Database, Upload, FileAudio } from 'lucide-react';
+import { Search, Trash2, Tag, Database, Upload, FileAudio, Download } from 'lucide-react';
 
 const TableToolbar = ({
     searchTerm,
@@ -8,6 +8,7 @@ const TableToolbar = ({
     onBatchDelete,
     onBatchTag,
     onBatchCopy,
+    onBatchDownload,
     onUploadClick,
     onBulkUploadClick
 }) => {
@@ -44,6 +45,12 @@ const TableToolbar = ({
                             className="flex items-center gap-2 bg-cyan-600/80 hover:bg-cyan-600 text-white px-3 py-1.5 rounded-lg text-sm transition-colors"
                         >
                             <Database size={16} /> Copy to Bucket
+                        </button>
+                        <button
+                            onClick={onBatchDownload}
+                            className="flex items-center gap-2 bg-emerald-600/80 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm transition-colors"
+                        >
+                            <Download size={16} /> Download ({selectedCount})
                         </button>
                     </div>
                 )}
