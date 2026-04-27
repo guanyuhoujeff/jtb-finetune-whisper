@@ -5,11 +5,14 @@ import os
 import signal
 import sys
 import json
+import logging
 import psutil
 from collections import deque
 
 STATE_FILE = "training_state.json"
 LOG_FILE = "training.log"
+
+logger = logging.getLogger("jtb.training")
 
 class TrainingManager:
     def __init__(self):
@@ -26,18 +29,20 @@ class TrainingManager:
         self._recover_state()
 
     def _save_state(self, pid=None):
-        """Saves current state to file."""
+        """Saves current state to file. Never persists secrets (e.g. HF tokens)."""
+        # Persist only the task names — command queues may carry secrets via stdin
+        # and we never want them on disk.
         state = {
             "status": self.status,
             "current_task": self.current_task_name,
             "pid": pid,
-            "queue": list(self.command_queue)
+            "queue_task_names": [task_name for task_name, *_ in self.command_queue],
         }
         try:
             with open(STATE_FILE, "w") as f:
                 json.dump(state, f)
-        except Exception as e:
-            print(f"[ERROR] Failed to save state: {e}")
+        except Exception:
+            logger.exception("Failed to save training state")
 
     def _recover_state(self):
         """Attempts to recover state from file on startup."""
@@ -82,8 +87,8 @@ class TrainingManager:
                      for line in lines[-100:]:
                          self.logs.append(line.strip())
 
-        except Exception as e:
-            print(f"[ERROR] Failed to recover state: {e}")
+        except Exception:
+            logger.exception("Failed to recover training state")
 
     def _tail_logs(self):
         """Tails the log file and updates self.logs"""
@@ -161,8 +166,8 @@ class TrainingManager:
                 "--minio-bucket", bucket_name # Use the target bucket as the default minio bucket context
             ]
             
-            self.command_queue.append(("Training", cmd_train))
-            
+            self.command_queue.append(("Training", cmd_train, None))
+
             # 2. Merge
             if config.get("do_merge"):
                 cmd_merge = [
@@ -171,8 +176,8 @@ class TrainingManager:
                     "--lora-checkpoint", lora_dir,
                     "--output-dir", merged_dir
                 ]
-                self.command_queue.append(("Merging", cmd_merge))
-                
+                self.command_queue.append(("Merging", cmd_merge, None))
+
                 # 3. Convert
                 if config.get("do_convert"):
                     cmd_convert = [
@@ -180,29 +185,33 @@ class TrainingManager:
                         "-m", "backend.scripts.convert_ct2",
                         "--model-path", merged_dir,
                         "--output-dir", ct2_dir,
-                        "--quantization", "float16" 
+                        "--quantization", "float16"
                     ]
-                    self.command_queue.append(("Converting", cmd_convert))
+                    self.command_queue.append(("Converting", cmd_convert, None))
 
             # 4. Upload
             if config.get("do_upload"):
-                upload_folder = lora_dir
+                upload_folder_path = lora_dir
                 if config.get("do_convert") and config.get("do_merge"):
-                    upload_folder = ct2_dir
+                    upload_folder_path = ct2_dir
                 elif config.get("do_merge"):
-                    upload_folder = merged_dir
-                
+                    upload_folder_path = merged_dir
+
                 cmd_upload = [
                     sys.executable,
                     "-m", "backend.scripts.upload_hf",
                     "--repo-id", config.get("hf_repo_id", ""),
-                    "--folder", upload_folder,
-                    "--token", config.get("hf_token", "")
+                    "--folder", upload_folder_path,
+                    "--token-from", "stdin",
                 ]
-                self.command_queue.append(("Uploading", cmd_upload))
+                # Token is fed to the child via stdin so it never appears in argv / ps / audit logs.
+                hf_token = (config.get("hf_token") or "").strip()
+                if not hf_token:
+                    raise ValueError("hf_token is required when do_upload is true")
+                self.command_queue.append(("Uploading", cmd_upload, hf_token + "\n"))
 
             # Store pipeline steps for status tracking
-            self.pipeline_steps = [task_name for task_name, _ in self.command_queue]
+            self.pipeline_steps = [task_name for task_name, *_ in self.command_queue]
             self.current_step_index = 0
 
             self.logs.append("[SYSTEM] Pipeline started.")
@@ -212,14 +221,18 @@ class TrainingManager:
         with self.lock:
             if self.status == "running":
                 raise RuntimeError("A task is already running.")
-            
+
+            hf_token = (hf_token or "").strip()
+            if not hf_token:
+                raise ValueError("hf_token is required for upload tasks")
+
             # Reset logs
             self.logs.clear()
             open(LOG_FILE, 'w').close()
-            
+
             self.status = "running"
             self.command_queue.clear()
-            
+
             # Verify path
             cwd = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
             full_model_path = os.path.abspath(model_path)
@@ -228,17 +241,17 @@ class TrainingManager:
                  full_model_path = os.path.join(cwd, model_path)
                  if not os.path.exists(full_model_path):
                      raise ValueError(f"Model path does not exist: {model_path}")
-            
+
             cmd_upload = [
                 sys.executable,
                 "-m", "backend.scripts.upload_hf",
                 "--repo-id", repo_id,
                 "--folder", full_model_path,
-                "--token", hf_token
+                "--token-from", "stdin",
             ]
-            
-            self.command_queue.append(("Uploading to HF", cmd_upload))
-            
+
+            self.command_queue.append(("Uploading to HF", cmd_upload, hf_token + "\n"))
+
             # Store pipeline steps for status tracking
             self.pipeline_steps = ["Uploading to HF"]
             self.current_step_index = 0
@@ -260,41 +273,58 @@ class TrainingManager:
                     pass
             return
 
-        task_name, cmd = self.command_queue.popleft()
+        task_name, cmd, stdin_data = self.command_queue.popleft()
         self.current_task_name = task_name
-        
+
         with self.lock:
              self.logs.append(f"[SYSTEM] Starting task: {task_name}")
+             # Never log the raw command for tasks that carry secrets via stdin —
+             # the stdin payload itself is already kept off the command line, but
+             # the cmd is safe to log because it no longer holds the token.
              self.logs.append(f"[SYSTEM] Command: {' '.join(cmd)}")
-             
+
         cwd = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
-        
+
         try:
             # Use a log file for stdout/stderr redirection to allow persistence + tailing
             self.log_file_handle = open(LOG_FILE, "a")
-            
+
             self.process = subprocess.Popen(
-                cmd, 
+                cmd,
                 cwd=cwd,
+                stdin=subprocess.PIPE if stdin_data else subprocess.DEVNULL,
                 stdout=self.log_file_handle,
-                stderr=subprocess.STDOUT, # Merge stderr into stdout
+                stderr=subprocess.STDOUT,  # Merge stderr into stdout
                 text=True,
-                bufsize=1 
+                bufsize=1
             )
-            
+
+            # Send stdin secret (e.g. HF token) and close the pipe so the child
+            # sees EOF after the single line.
+            if stdin_data:
+                try:
+                    assert self.process.stdin is not None
+                    self.process.stdin.write(stdin_data)
+                    self.process.stdin.flush()
+                finally:
+                    try:
+                        self.process.stdin.close()
+                    except Exception:
+                        pass
+
             # Save state with new PID
             self._save_state(self.process.pid)
-            
+
             # Start thread to tail the log file
             t_tail = threading.Thread(target=self._tail_logs)
             t_tail.daemon = True
             t_tail.start()
-            
+
             # Start monitor
             t_monitor = threading.Thread(target=self._monitor_process)
             t_monitor.daemon = True
             t_monitor.start()
-            
+
         except Exception as e:
             with self.lock:
                 self.status = "error"

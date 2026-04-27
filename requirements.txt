@@ -1,27 +1,52 @@
-fastapi[standard]
-uvicorn
-pandas
-python-multipart
-psutil
-GPUtil
-s3fs
-soundfile 
-librosa
-minio
-datasets>=2.20.0
-datasets[audio]>=2.20.0
-accelerate 
-evaluate
-jiwer 
-tensorboard 
-gradio
+# JTB Finetune Whisper — direct dependencies
+#
+# These are minimum-version constraints. To get fully reproducible builds, run:
+#   pip install -r requirements.txt && pip freeze > requirements.lock.txt
+# and commit `requirements.lock.txt` (or use pip-tools / uv to manage the lock).
+#
+# Hard pins below are intentional:
+#   - transformers==4.45.2  — training pipeline (LoRA + Whisper) is verified
+#                             against this version; later versions changed APIs
+#                             used by backend/scripts/train_lora.py.
+#   - ctranslate2==4.4.0    — required by faster-whisper for CT2 model export.
+
+# Web framework
+fastapi[standard]>=0.111,<1.0
+uvicorn>=0.29,<1.0
+python-multipart>=0.0.9,<1.0
+
+# Storage / IO
+minio>=7.2,<8.0
+s3fs>=2024.6.0
+soundfile>=0.12,<1.0
+librosa>=0.10,<1.0
+
+# Data / numerics
+numpy>=1.26,<3.0
+pandas>=2.2,<3.0
+pyyaml>=6.0,<7.0
+
+# Datasets (audio extras)
+datasets[audio]>=2.20.0,<3.0
+
+# System monitoring
+psutil>=5.9,<8.0
+GPUtil>=1.4,<2.0
+
+# Training stack — see hard-pin rationale at the top of this file
 transformers==4.45.2
-bitsandbytes
-peft
-wandb
+accelerate>=0.33,<2.0
+bitsandbytes>=0.43,<1.0
+peft>=0.11,<1.0
+evaluate>=0.4,<1.0
+jiwer>=3.0,<5.0
+tensorboard>=2.16,<3.0
+wandb>=0.17,<1.0
+
+# Inference / CT2 export — see hard-pin rationale at the top of this file
 ctranslate2==4.4.0
-faster-whisper
-numpy
-pandas
-pyyaml
-jupyterlab
+faster-whisper>=1.0,<2.0
+
+# Optional: notebooks & UI
+jupyterlab>=4.0,<5.0
+gradio>=4.0,<6.0

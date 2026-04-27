@@ -19,4 +19,5 @@ README_old.md
 UI_README.md
 handler.py
 minio-data
-backend/tests
+backend/**/__pycache__/
+backend/tests/.pytest_cache/

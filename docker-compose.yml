@@ -11,8 +11,9 @@ services:
       - "${MINIO_API_PORT:-9000}:9000"   # API
       - "${MINIO_CONSOLE_PORT:-9001}:9001"   # Console
     environment:
-      MINIO_ROOT_USER: ${MINIO_USER:-admin}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-password123}
+      # 這兩個變數必填，請在 .env 中設定。沒設好的話 MinIO 會直接拒絕啟動。
+      MINIO_ROOT_USER: ${MINIO_USER:?MINIO_USER must be set in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:?MINIO_PASSWORD must be set in .env}
     volumes:
       # If user wants to map host path, they can change volume definition or use named volume redirection
       # For simplicity in .env, we stick to named volume as default but allow override if user edits here
@@ -48,8 +49,12 @@ services:
       - "${SERVER_PORT:-42045}:42045"
     environment:
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
-      - MINIO_ACCESS_KEY=${MINIO_USER:-admin}
-      - MINIO_SECRET_KEY=${MINIO_PASSWORD:-password123}
+      - MINIO_ACCESS_KEY=${MINIO_USER:?MINIO_USER must be set in .env}
+      - MINIO_SECRET_KEY=${MINIO_PASSWORD:?MINIO_PASSWORD must be set in .env}
+      - BACKEND_API_KEY=${BACKEND_API_KEY:-}
+      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      - BACKEND_LOG_LEVEL=${BACKEND_LOG_LEVEL:-INFO}
+      - BACKEND_ALLOW_INSECURE_NO_AUTH=${BACKEND_ALLOW_INSECURE_NO_AUTH:-0}
       - PYTHONUNBUFFERED=1
     volumes:
       - .:/workspace

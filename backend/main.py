@@ -11,6 +11,14 @@ import uvicorn
 import shutil
 import os
 import secrets
+import logging
+
+logger = logging.getLogger("jtb.backend")
+if not logger.handlers:
+    logging.basicConfig(
+        level=os.getenv("BACKEND_LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
 
 app = FastAPI()
 
@@ -31,12 +39,16 @@ def _allow_cors_credentials(origins: list[str]) -> bool:
 
 
 def _is_api_request_authorized(
-    path: str, method: str, headers: dict, configured_api_key: str
+    path: str,
+    method: str,
+    headers: dict,
+    configured_api_key: str,
+    allow_unauth: bool = False,
 ) -> bool:
     if not path.startswith("/api") or method.upper() == "OPTIONS":
         return True
     if not configured_api_key:
-        return True
+        return allow_unauth
     request_key = headers.get("x-api-key", "")
     return secrets.compare_digest(request_key, configured_api_key)
 
@@ -51,6 +63,18 @@ def _safe_remove_temp_file(path: Optional[str]) -> None:
 
 
 API_KEY = os.getenv("BACKEND_API_KEY", "").strip()
+ALLOW_INSECURE_NO_AUTH = os.getenv("BACKEND_ALLOW_INSECURE_NO_AUTH", "").lower() in ("1", "true", "yes")
+if not API_KEY and not ALLOW_INSECURE_NO_AUTH:
+    raise RuntimeError(
+        "BACKEND_API_KEY is not configured. Set it in your environment, "
+        "or set BACKEND_ALLOW_INSECURE_NO_AUTH=1 explicitly to opt-in to an unauthenticated API."
+    )
+if not API_KEY:
+    logger.warning(
+        "BACKEND_API_KEY is empty and BACKEND_ALLOW_INSECURE_NO_AUTH is enabled — "
+        "the API will accept unauthenticated requests. DO NOT use this in production."
+    )
+
 origins = _build_cors_origins()
 allow_credentials = _allow_cors_credentials(origins)
 
@@ -66,7 +90,11 @@ app.add_middleware(
 @app.middleware("http")
 async def api_key_guard(request: Request, call_next):
     if not _is_api_request_authorized(
-        request.url.path, request.method, request.headers, API_KEY
+        request.url.path,
+        request.method,
+        request.headers,
+        API_KEY,
+        allow_unauth=ALLOW_INSECURE_NO_AUTH,
     ):
         return JSONResponse(
             status_code=401,
@@ -137,13 +165,13 @@ class BucketCreate(BaseModel):
 
 @app.post("/api/buckets")
 def create_bucket(bucket: BucketCreate):
-    print("bucket name: ", bucket.bucket_name)
+    logger.info("Create bucket request: %s", bucket.bucket_name)
     try:
         minio_client.create_bucket(bucket.bucket_name)
         return {"status": "success", "message": f"Bucket {bucket.bucket_name} created"}
-    except Exception as e:
-        print(e)
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Failed to create bucket %s", bucket.bucket_name)
+        raise HTTPException(status_code=500, detail="Failed to create bucket")
 
 @app.post("/api/buckets/clone")
 def clone_bucket(req: CloneBucketRequest):
@@ -238,8 +266,8 @@ def batch_download(req: BatchOperationRequest):
                     zf.writestr(f"audio/{fname}", resp.read())
                     resp.close()
                     resp.release_conn()
-                except Exception as e:
-                    print(f"Skipping {fname}: {e}")
+                except Exception:
+                    logger.warning("Skipping %s during batch download", fname, exc_info=True)
 
         buf.seek(0)
         archive_name = f"{req.bucket_name}_{req.split}_selected.zip"
@@ -383,15 +411,15 @@ async def sse_events():
             try:
                 stats = system_monitor.get_stats()
                 yield f"event: system_stats\ndata: {json.dumps(stats)}\n\n"
-            except Exception as e:
-                print(f"Error getting system stats: {e}")
+            except Exception:
+                logger.warning("Error getting system stats", exc_info=True)
 
             # 2. Training Status
             try:
                 status = training_manager.get_status()
                 yield f"event: training_status\ndata: {json.dumps(status)}\n\n"
-            except Exception as e:
-                print(f"Error getting training status: {e}")
+            except Exception:
+                logger.warning("Error getting training status", exc_info=True)
 
             await asyncio.sleep(2)
 
@@ -493,7 +521,6 @@ def _get_audio_path(audio_source: str, bucket_name: Optional[str], file_name: Op
 @app.post("/api/evaluate/infer")
 async def infer_single(request: InferRequest):
     """Run inference with a single model."""
-    import traceback
     audio_path = None
     try:
         audio_path = _get_audio_path(
@@ -502,7 +529,7 @@ async def infer_single(request: InferRequest):
             request.file_name,
             request.audio_base64
         )
-        
+
         result = evaluate_manager.infer(
             model_name=request.model_name,
             source=request.source,
@@ -516,10 +543,12 @@ async def infer_single(request: InferRequest):
             "inference_time_ms": result.inference_time_ms,
             "language": result.language
         }
-    except Exception as e:
-        print(f"[EVALUATE ERROR] {str(e)}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as e:
+        logger.warning("Invalid evaluate/infer request: %s", e)
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("evaluate/infer failed")
+        raise HTTPException(status_code=500, detail="Inference failed")
     finally:
         _safe_remove_temp_file(audio_path)
 
@@ -645,10 +674,11 @@ async def save_evaluation_result(
 
         return {"status": "success", "results": results}
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("evaluate/save failed")
+        raise HTTPException(status_code=500, detail="Failed to save evaluation result")
 
 
 if __name__ == "__main__":

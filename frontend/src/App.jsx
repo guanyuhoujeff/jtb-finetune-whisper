@@ -37,8 +37,8 @@ const App = () => {
         const saved = localStorage.getItem('minio_config');
         return saved ? JSON.parse(saved) : {
             endpoint: 'localhost:9000',
-            access_key: 'admin',
-            secret_key: 'password123',
+            access_key: '',
+            secret_key: '',
             bucket_name: ''
         };
     });
