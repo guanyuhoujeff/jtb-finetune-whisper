@@ -151,7 +151,7 @@ class TrainingManager:
             # 1. Train
             from backend.services.minio_client import minio_client
             cmd_train = [
-                sys.executable, 
+                sys.executable,
                 "-m", "backend.scripts.train_lora",
                 "--model-name", model_name,
                 "--output-dir", lora_dir,
@@ -160,10 +160,12 @@ class TrainingManager:
                 "--bucket-name", bucket_name,
                 "--learning-rate", str(config.get("learning_rate", 1e-4)),
                 "--batch-size", str(config.get("per_device_train_batch_size", 1)),
+                "--lora-r", str(config.get("lora_r", 32)),
+                "--lora-alpha", str(config.get("lora_alpha", 64)),
                 "--minio-endpoint", minio_client.endpoint,
                 "--minio-access-key", minio_client.access_key,
                 "--minio-secret-key", minio_client.secret_key,
-                "--minio-bucket", bucket_name # Use the target bucket as the default minio bucket context
+                "--minio-bucket", bucket_name  # Use the target bucket as the default minio bucket context
             ]
             
             self.command_queue.append(("Training", cmd_train, None))
@@ -257,6 +259,59 @@ class TrainingManager:
             self.current_step_index = 0
 
             self.logs.append(f"[SYSTEM] Upload task started for {model_path}")
+            self._start_next_task()
+
+    def start_preprocess_task(
+        self,
+        source_bucket: str,
+        target_bucket: str,
+        *,
+        splits: str = "train,test",
+        max_chunk_sec: float = 25.0,
+        min_chunk_sec: float = 1.0,
+        confidence_threshold: float = 0.7,
+        whisper_model: str = "small",
+        language: str = "zh",
+    ) -> None:
+        """Queue a long-audio preprocessing task. Reuses the same pipeline
+        machinery (single-task queue, log tailing, status reporting) as training."""
+        with self.lock:
+            if self.status == "running":
+                raise RuntimeError("A task is already running.")
+            if not source_bucket or not target_bucket:
+                raise ValueError("source_bucket and target_bucket are required")
+            if source_bucket == target_bucket:
+                raise ValueError("source_bucket and target_bucket must differ")
+
+            from backend.services.minio_client import minio_client
+
+            self.logs.clear()
+            open(LOG_FILE, "w").close()
+            self.status = "running"
+            self.command_queue.clear()
+
+            cmd = [
+                sys.executable,
+                "-m", "backend.scripts.preprocess_long_audio",
+                "--source-bucket", source_bucket,
+                "--target-bucket", target_bucket,
+                "--splits", splits,
+                "--max-chunk-sec", str(max_chunk_sec),
+                "--min-chunk-sec", str(min_chunk_sec),
+                "--confidence-threshold", str(confidence_threshold),
+                "--whisper-model", whisper_model,
+                "--language", language,
+                "--minio-endpoint", minio_client.endpoint,
+                "--minio-access-key", minio_client.access_key,
+                "--minio-secret-key", minio_client.secret_key,
+            ]
+            self.command_queue.append(("Preprocessing long audio", cmd, None))
+            self.pipeline_steps = ["Preprocessing long audio"]
+            self.current_step_index = 0
+
+            self.logs.append(
+                f"[SYSTEM] Preprocess task started: {source_bucket} -> {target_bucket}"
+            )
             self._start_next_task()
 
     def _start_next_task(self):

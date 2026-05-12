@@ -21,3 +21,4 @@ handler.py
 minio-data
 backend/**/__pycache__/
 backend/tests/.pytest_cache/
+minio-data.backup.2026-04-27

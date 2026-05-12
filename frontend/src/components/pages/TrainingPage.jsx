@@ -137,6 +137,19 @@ const TrainingPage = ({ apiBaseUrl }) => {
     const [isStarting, setIsStarting] = useState(false);
     const [activeTab, setActiveTab] = useState('config'); // 'config' or 'progress'
 
+    // --- Long-audio preprocessing (split >25s clips into aligned chunks) ---
+    const [showPreprocess, setShowPreprocess] = useState(false);
+    const [isPreprocessing, setIsPreprocessing] = useState(false);
+    const [preprocessConfig, setPreprocessConfig] = useState({
+        source_bucket: '',
+        target_bucket: '',
+        max_chunk_sec: 25,
+        confidence_threshold: 0.7,
+        whisper_model: 'small',
+        language: 'zh',
+        splits: 'train,test',
+    });
+
     const logsEndRef = useRef(null);
 
     // Poll status every 2 seconds
@@ -264,6 +277,37 @@ const TrainingPage = ({ apiBaseUrl }) => {
         }
     };
 
+    const handlePreprocessChange = (e) => {
+        const { name, value } = e.target;
+        setPreprocessConfig(prev => ({
+            ...prev,
+            [name]: name === 'max_chunk_sec' || name === 'confidence_threshold'
+                ? parseFloat(value)
+                : value,
+        }));
+    };
+
+    const handleStartPreprocess = async () => {
+        if (!preprocessConfig.source_bucket || !preprocessConfig.target_bucket) {
+            alert('請選擇 Source / Target bucket');
+            return;
+        }
+        if (preprocessConfig.source_bucket === preprocessConfig.target_bucket) {
+            alert('Source 與 Target bucket 不能相同');
+            return;
+        }
+        setIsPreprocessing(true);
+        try {
+            await axios.post(`${apiBaseUrl}/dataset/preprocess-long-audio`, preprocessConfig);
+            setActiveTab('progress');
+        } catch (err) {
+            const detail = err.response?.data?.detail || err.message;
+            alert('Failed to start preprocessing: ' + detail);
+        } finally {
+            setIsPreprocessing(false);
+        }
+    };
+
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
         setConfig(prev => ({
@@ -353,6 +397,105 @@ const TrainingPage = ({ apiBaseUrl }) => {
                             </div>
 
                             <div className="space-y-5">
+                                {/* Long-audio preprocessing — split >25s clips into chunks */}
+                                <div className="border border-amber-500/30 bg-amber-500/5 rounded-lg overflow-hidden">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPreprocess(v => !v)}
+                                        className="w-full flex items-center justify-between px-4 py-3 text-left text-sm hover:bg-amber-500/10 transition-colors"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-amber-400 font-semibold">Pre-process Long Audio</span>
+                                            <span className="text-xs text-slate-500">(optional)</span>
+                                        </div>
+                                        <span className="text-xs text-slate-500">{showPreprocess ? '▼' : '▶'}</span>
+                                    </button>
+                                    {showPreprocess && (
+                                        <div className="px-4 pb-4 space-y-3 border-t border-amber-500/20">
+                                            <p className="text-xs text-slate-400 leading-relaxed mt-3">
+                                                Whisper 訓練只能吃 ≤30 秒音檔，超過會被靜默截斷。此工具用 VAD 切片並對齊轉錄文字，產出新的 bucket 給訓練用；信心過低的樣本會被收進 <code className="text-amber-300">low_confidence.csv</code> 等待人工檢視。
+                                            </p>
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-slate-500 font-medium uppercase">Source Bucket</label>
+                                                <select
+                                                    name="source_bucket"
+                                                    value={preprocessConfig.source_bucket}
+                                                    onChange={handlePreprocessChange}
+                                                    disabled={status === 'running'}
+                                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-200 disabled:opacity-50"
+                                                >
+                                                    <option value="">— Select —</option>
+                                                    {availableBuckets.map(b => (
+                                                        <option key={b} value={b}>{b}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-slate-500 font-medium uppercase">Target Bucket (將自動建立)</label>
+                                                <input
+                                                    type="text"
+                                                    name="target_bucket"
+                                                    placeholder="e.g. my-dataset-chunked"
+                                                    value={preprocessConfig.target_bucket}
+                                                    onChange={handlePreprocessChange}
+                                                    disabled={status === 'running'}
+                                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-200 disabled:opacity-50"
+                                                />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="space-y-2">
+                                                    <label className="text-xs text-slate-500 font-medium uppercase">Max Chunk (sec)</label>
+                                                    <input
+                                                        type="number"
+                                                        name="max_chunk_sec"
+                                                        min="5" max="29" step="1"
+                                                        value={preprocessConfig.max_chunk_sec}
+                                                        onChange={handlePreprocessChange}
+                                                        disabled={status === 'running'}
+                                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-200 disabled:opacity-50"
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <label className="text-xs text-slate-500 font-medium uppercase">Conf. Threshold</label>
+                                                    <input
+                                                        type="number"
+                                                        name="confidence_threshold"
+                                                        min="0" max="1" step="0.05"
+                                                        value={preprocessConfig.confidence_threshold}
+                                                        onChange={handlePreprocessChange}
+                                                        disabled={status === 'running'}
+                                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-200 disabled:opacity-50"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-slate-500 font-medium uppercase">Whisper Model (alignment only)</label>
+                                                <select
+                                                    name="whisper_model"
+                                                    value={preprocessConfig.whisper_model}
+                                                    onChange={handlePreprocessChange}
+                                                    disabled={status === 'running'}
+                                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-200 disabled:opacity-50"
+                                                >
+                                                    <option value="tiny">tiny (快, 不準)</option>
+                                                    <option value="base">base</option>
+                                                    <option value="small">small (推薦)</option>
+                                                    <option value="medium">medium</option>
+                                                    <option value="large-v3">large-v3 (慢, 最準)</option>
+                                                </select>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={handleStartPreprocess}
+                                                disabled={status === 'running' || isPreprocessing}
+                                                className="w-full py-2.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-semibold text-sm transition-colors"
+                                            >
+                                                {isPreprocessing ? 'Starting…' : status === 'running' ? 'Pipeline Busy' : 'Start Pre-processing'}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <div className="space-y-2">
                                     <label className="text-xs text-slate-500 font-medium uppercase">Dataset Bucket</label>
                                     <select

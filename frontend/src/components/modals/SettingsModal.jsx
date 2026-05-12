@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 
-const SettingsModal = ({ isOpen, onClose, currentSettings, currentBackendUrl, onSave }) => {
+const SettingsModal = ({ isOpen, onClose, currentSettings, currentBackendUrl, currentApiKey = '', onSave }) => {
     const [settings, setSettings] = useState(currentSettings);
     const [backendUrl, setBackendUrl] = useState(currentBackendUrl);
+    const [apiKey, setApiKey] = useState(currentApiKey);
     const [saveToLocalStorage, setSaveToLocalStorage] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -10,11 +11,12 @@ const SettingsModal = ({ isOpen, onClose, currentSettings, currentBackendUrl, on
         if (isOpen) {
             setSettings(currentSettings);
             setBackendUrl(currentBackendUrl);
+            setApiKey(currentApiKey || '');
             // Check if we have saved settings in local storage to set checkbox initial state
-            const hasSaved = localStorage.getItem('backend_url') || localStorage.getItem('minio_config');
+            const hasSaved = localStorage.getItem('backend_url') || localStorage.getItem('minio_config') || localStorage.getItem('backend_api_key');
             setSaveToLocalStorage(!!hasSaved);
         }
-    }, [isOpen, currentSettings, currentBackendUrl]);
+    }, [isOpen, currentSettings, currentBackendUrl, currentApiKey]);
 
     const handleChange = (e) => {
         setSettings({ ...settings, [e.target.name]: e.target.value });
@@ -24,7 +26,7 @@ const SettingsModal = ({ isOpen, onClose, currentSettings, currentBackendUrl, on
         e.preventDefault();
         setIsSaving(true);
         try {
-            await onSave(settings, backendUrl, saveToLocalStorage);
+            await onSave(settings, backendUrl, saveToLocalStorage, apiKey);
             onClose();
         } catch (err) {
             alert("Failed to save settings: " + err.message);
@@ -43,15 +45,29 @@ const SettingsModal = ({ isOpen, onClose, currentSettings, currentBackendUrl, on
                     Connection Settings
                 </h2>
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="border-b border-slate-800 pb-4 mb-4">
-                        <label className="block text-sm text-slate-400 mb-1">Backend Server URL</label>
-                        <input
-                            title="The URL of the Python backend server (e.g., http://localhost:8000/api)"
-                            value={backendUrl}
-                            onChange={(e) => setBackendUrl(e.target.value)}
-                            className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-slate-200 focus:border-indigo-500 outline-none"
-                            placeholder="http://localhost:8000/api"
-                        />
+                    <div className="border-b border-slate-800 pb-4 mb-4 space-y-3">
+                        <div>
+                            <label className="block text-sm text-slate-400 mb-1">Backend Server URL</label>
+                            <input
+                                title="The URL of the Python backend server (e.g., http://localhost:8000/api)"
+                                value={backendUrl}
+                                onChange={(e) => setBackendUrl(e.target.value)}
+                                className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-slate-200 focus:border-indigo-500 outline-none"
+                                placeholder="http://localhost:8000/api"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm text-slate-400 mb-1">Backend API Key</label>
+                            <input
+                                type="password"
+                                title="x-api-key header sent with every backend request. Match BACKEND_API_KEY in your backend .env."
+                                value={apiKey}
+                                onChange={(e) => setApiKey(e.target.value)}
+                                className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-slate-200 focus:border-indigo-500 outline-none"
+                                placeholder="Paste BACKEND_API_KEY from .env"
+                            />
+                            <p className="text-xs text-slate-500 mt-1">Required when the backend has BACKEND_API_KEY set. Empty = no auth.</p>
+                        </div>
                     </div>
 
                     <div>

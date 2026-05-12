@@ -47,6 +47,12 @@ wandb>=0.17,<1.0
 ctranslate2==4.4.0
 faster-whisper>=1.0,<2.0
 
+# Long-audio preprocessing (VAD-based chunking before training)
+silero-vad>=5.1,<7.0
+# Traditional <-> Simplified Chinese conversion for char-level alignment.
+# Pure-python fork (no C++/system deps required).
+opencc-python-reimplemented>=0.1.7,<1.0
+
 # Optional: notebooks & UI
 jupyterlab>=4.0,<5.0
 gradio>=4.0,<6.0

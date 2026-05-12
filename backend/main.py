@@ -134,23 +134,34 @@ class CloneBucketRequest(BaseModel):
 
 @app.post("/api/config")
 def update_config(config: MinioConfig):
+    """Frontend-driven config update.
+
+    The backend's internal MinIO endpoint must match the docker network (e.g.
+    `minio:9000`) and is configured via env at startup. The frontend ships the
+    *browser-facing* endpoint here so we only update the presigned-URL host
+    and the credentials — never the internal connection target. Otherwise a
+    user pasting `localhost:9000` from their machine would silently break
+    every backend->MinIO call from inside the container.
+    """
     try:
-        # Update MinIO Client
         minio_client.update_config(
-            config.endpoint,
+            minio_client.endpoint,  # keep internal endpoint pinned to env
             config.access_key,
             config.secret_key,
-            secure=False # Assumed false for internal IP
+            secure=False,
+            external_endpoint=config.endpoint or minio_client.external_endpoint,
         )
-        # Update global bucket name context if needed, or frontend handles it passed in requests.
-        # Ideally, main.py shouldn't hold state, but minio_client.py has constants. 
-        # For this simple app, we update the module level variable is a bit hacky but works for singleton.
         import backend.services.minio_client as mc
         mc.BUCKET_NAME = config.bucket_name
-        
-        return {"status": "success", "message": "Configuration updated"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+        return {
+            "status": "success",
+            "message": "Credentials and presigned-URL host updated. Internal endpoint stays at "
+                       f"{minio_client.endpoint} (set via MINIO_ENDPOINT env).",
+        }
+    except Exception:
+        logger.exception("update_config failed")
+        raise HTTPException(status_code=500, detail="Failed to update MinIO config")
 
 @app.get("/api/buckets")
 def list_buckets():
@@ -341,6 +352,11 @@ class TrainingConfig(BaseModel):
     learning_rate: float = 1e-4
     per_device_train_batch_size: int = 1
     eval_steps: int = 50
+    # LoRA capacity. Default r=32,alpha=64 keeps backwards-compatible behavior;
+    # raise r (and alpha=2*r) when the model needs to memorize more specialized
+    # vocabulary (e.g. medical jargon overfit).
+    lora_r: int = 32
+    lora_alpha: int = 64
     do_merge: bool = False
     do_convert: bool = False
     do_upload: bool = False
@@ -392,11 +408,45 @@ def upload_model(request: UploadModelRequest):
     try:
         # Resolve path - reusing evaluate_manager logic
         model_path = evaluate_manager._get_model_path(request.model_name, request.source, request.variant)
-        
+
         training_manager.start_upload_task(model_path, request.repo_id, request.hf_token)
         return {"status": "success", "message": "Upload task started"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class PreprocessLongAudioRequest(BaseModel):
+    source_bucket: str
+    target_bucket: str
+    splits: str = "train,test"
+    max_chunk_sec: float = 25.0
+    min_chunk_sec: float = 1.0
+    confidence_threshold: float = 0.7
+    whisper_model: str = "small"
+    language: str = "zh"
+
+
+@app.post("/api/dataset/preprocess-long-audio")
+def preprocess_long_audio(req: PreprocessLongAudioRequest):
+    """Queue a job that splits >25s audio into chunks with aligned transcripts.
+    Progress is exposed through the same /api/train/status endpoint as training."""
+    try:
+        training_manager.start_preprocess_task(
+            source_bucket=req.source_bucket,
+            target_bucket=req.target_bucket,
+            splits=req.splits,
+            max_chunk_sec=req.max_chunk_sec,
+            min_chunk_sec=req.min_chunk_sec,
+            confidence_threshold=req.confidence_threshold,
+            whisper_model=req.whisper_model,
+            language=req.language,
+        )
+        return {"status": "success", "message": "Preprocess task started"}
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("preprocess-long-audio failed to start")
+        raise HTTPException(status_code=500, detail="Failed to start preprocess task")
 
 
 from fastapi.responses import StreamingResponse

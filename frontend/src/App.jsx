@@ -31,6 +31,16 @@ const App = () => {
 
     // API Config State
     const [apiBaseUrl, setApiBaseUrl] = useState(() => localStorage.getItem('backend_url') || 'http://localhost:8000/api');
+    const [apiKey, setApiKey] = useState(() => localStorage.getItem('backend_api_key') || '');
+
+    // Keep axios in sync with the API key — applied to ALL requests this app makes.
+    useEffect(() => {
+        if (apiKey) {
+            axios.defaults.headers.common['x-api-key'] = apiKey;
+        } else {
+            delete axios.defaults.headers.common['x-api-key'];
+        }
+    }, [apiKey]);
 
     // State
     const [config, setConfig] = useState(() => {
@@ -161,18 +171,25 @@ const App = () => {
         });
     };
 
-    const handleSaveConfig = async (newConfig, newBackendUrl, saveToLocalStorage) => {
+    const handleSaveConfig = async (newConfig, newBackendUrl, saveToLocalStorage, newApiKey = '') => {
         // Update State
         setApiBaseUrl(newBackendUrl);
         setConfig(newConfig);
+        setApiKey(newApiKey);
 
         // Update LocalStorage
         if (saveToLocalStorage) {
             localStorage.setItem('backend_url', newBackendUrl);
             localStorage.setItem('minio_config', JSON.stringify(newConfig));
+            if (newApiKey) {
+                localStorage.setItem('backend_api_key', newApiKey);
+            } else {
+                localStorage.removeItem('backend_api_key');
+            }
         } else {
             localStorage.removeItem('backend_url');
             localStorage.removeItem('minio_config');
+            localStorage.removeItem('backend_api_key');
         }
 
         // Try to push config to backend (if available)
@@ -625,6 +642,7 @@ const App = () => {
                 onClose={() => setIsSettingsOpen(false)}
                 currentSettings={config}
                 currentBackendUrl={apiBaseUrl}
+                currentApiKey={apiKey}
                 onSave={handleSaveConfig}
             />
 

@@ -36,6 +36,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bucket-name", default=None, help="Bucket to train on")
     parser.add_argument("--learning-rate", type=float, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument(
+        "--eval-samples",
+        type=int,
+        default=100,
+        help=(
+            "Number of test samples used for mid-training eval. Whisper "
+            "evaluation runs predict_with_generate=True which is much slower "
+            "than training (each sample = full autoregressive decoding). "
+            "Running eval on a 4k+ test set every eval_steps adds many hours "
+            "to a 10k-step run, so we sample a small subset by default; pass "
+            "0 to use the full test set."
+        ),
+    )
+    parser.add_argument(
+        "--lora-r",
+        type=int,
+        default=32,
+        help="LoRA rank (capacity). Higher = more trainable params and more "
+             "ability to memorize, at the cost of more VRAM and slower training. "
+             "Typical: 16 (light), 32 (default), 64 (high), 128 (extreme).",
+    )
+    parser.add_argument(
+        "--lora-alpha",
+        type=int,
+        default=64,
+        help="LoRA alpha (scaling). Convention: alpha = 2 * r. The effective "
+             "LoRA scale during forward pass is alpha / r.",
+    )
     return parser.parse_args()
 
 
@@ -102,6 +130,10 @@ def main() -> None:
         max_steps=max_steps,
         evaluation_strategy=(train_cfg.evaluation_strategy if train_cfg else "steps"),
         eval_steps=eval_steps,
+        # save_steps must be a multiple of eval_steps when load_best_model_at_end=True;
+        # tying them together keeps "save best by CER" consistent across configs.
+        save_strategy="steps",
+        save_steps=eval_steps,
         logging_steps=(train_cfg.logging_steps if train_cfg else 25),
         fp16=(train_cfg.fp16 if train_cfg else True),
         gradient_checkpointing=(train_cfg.gradient_checkpointing if train_cfg else True),
@@ -118,12 +150,13 @@ def main() -> None:
 
     model = prepare_model_for_kbit_training(model)
     lora_config = LoraConfig(
-        r=32,
-        lora_alpha=64,
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
         target_modules=["q_proj", "v_proj"],
         lora_dropout=0.05,
         bias="none",
     )
+    print(f"[lora] r={args.lora_r}  alpha={args.lora_alpha}  scale={args.lora_alpha/args.lora_r:.2f}")
     model = get_peft_model(model, lora_config)
 
     metric = evaluate.load("cer")
@@ -137,11 +170,17 @@ def main() -> None:
         cer = 100 * metric.compute(predictions=pred_str, references=label_str)
         return {"cer": cer}
 
+    # Subsample test for mid-training eval (see --eval-samples docs above for
+    # why). 0 means "use full test set".
+    eval_split = dataset["test"]
+    if args.eval_samples and args.eval_samples > 0:
+        eval_split = eval_split.take(args.eval_samples)
+
     trainer = Seq2SeqTrainer(
         args=training_args,
         model=model,
         train_dataset=dataset["train"],
-        eval_dataset=dataset["test"],
+        eval_dataset=eval_split,
         data_collator=data_collator,
         compute_metrics=compute_metrics,
         tokenizer=processor.tokenizer,

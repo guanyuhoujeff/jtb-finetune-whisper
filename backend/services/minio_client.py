@@ -4,6 +4,14 @@ from minio.error import S3Error
 import os
 
 class MinioClientWrapper:
+    # Set region explicitly so the MinIO SDK never performs a GetBucketLocation
+    # round-trip before signing presigned URLs. Without this, the presign client
+    # (which targets the *browser-facing* endpoint, e.g. localhost:9000) would
+    # try to reach that endpoint from *inside* the backend container — where
+    # the host is unreachable — and stall every dataset query for ~10s before
+    # returning empty results.
+    DEFAULT_REGION = "us-east-1"
+
     def __init__(self, endpoint, access_key, secret_key, secure=False, external_endpoint=None):
         self.endpoint = endpoint
         self.external_endpoint = external_endpoint
@@ -14,16 +22,16 @@ class MinioClientWrapper:
             endpoint,
             access_key=access_key,
             secret_key=secret_key,
-            secure=secure
+            secure=secure,
+            region=self.DEFAULT_REGION,
         )
-        # Separate client for presigned URLs so the signature matches the
-        # host the browser will actually use.
         ext = external_endpoint or endpoint
         self._presign_client = Minio(
             ext,
             access_key=access_key,
             secret_key=secret_key,
             secure=secure,
+            region=self.DEFAULT_REGION,
         ) if ext != endpoint else self.client
 
     def list_buckets(self):
@@ -66,6 +74,7 @@ class MinioClientWrapper:
             access_key=access_key,
             secret_key=secret_key,
             secure=secure,
+            region=self.DEFAULT_REGION,
         )
         ext = external_endpoint or endpoint
         self._presign_client = Minio(
@@ -73,6 +82,7 @@ class MinioClientWrapper:
             access_key=access_key,
             secret_key=secret_key,
             secure=secure,
+            region=self.DEFAULT_REGION,
         ) if ext != endpoint else self.client
 
 # Default configuration from environment variables
