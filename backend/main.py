@@ -398,8 +398,8 @@ def get_available_models():
 
 class UploadModelRequest(BaseModel):
     model_name: str
-    variant: Optional[str] = None # 'lora', 'merged', 'ct2'
-    source: str = "custom" 
+    variant: Optional[str] = None  # 'lora', 'merged', 'ct2'
+    source: str = "custom"
     repo_id: str
     hf_token: str
 
@@ -408,11 +408,43 @@ def upload_model(request: UploadModelRequest):
     try:
         # Resolve path - reusing evaluate_manager logic
         model_path = evaluate_manager._get_model_path(request.model_name, request.source, request.variant)
+        # Single-variant upload keeps the old behavior — push to repo root unless
+        # variant is given (then nest under the variant name to allow later multi-variant pushes).
+        path_in_repo = request.variant or ""
 
-        training_manager.start_upload_task(model_path, request.repo_id, request.hf_token)
+        training_manager.start_upload_task(
+            model_path, request.repo_id, request.hf_token, path_in_repo=path_in_repo,
+        )
         return {"status": "success", "message": "Upload task started"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class UploadVariantsRequest(BaseModel):
+    """Push multiple variants of the same model to one HF repo in subfolders."""
+    model_name: str
+    source: str = "custom"
+    variants: list[str] = ["lora", "merged", "ct2"]
+    repo_id: str
+    hf_token: str
+
+
+@app.post("/api/train/upload-variants")
+def upload_variants(request: UploadVariantsRequest):
+    try:
+        resolved = []
+        for v in request.variants:
+            model_path = evaluate_manager._get_model_path(request.model_name, request.source, v)
+            resolved.append((model_path, v))
+        training_manager.start_upload_variants_task(
+            request.repo_id, request.hf_token, resolved,
+        )
+        return {"status": "success", "message": f"Upload pipeline started with {len(resolved)} variant(s)"}
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("upload-variants failed to start")
+        raise HTTPException(status_code=500, detail="Failed to start upload pipeline")
 
 
 class PreprocessLongAudioRequest(BaseModel):

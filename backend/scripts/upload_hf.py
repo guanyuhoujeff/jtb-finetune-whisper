@@ -17,6 +17,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo-id", required=True)
     parser.add_argument("--folder", required=True)
     parser.add_argument(
+        "--path-in-repo",
+        default=None,
+        help="Optional subdirectory inside the repo (e.g. 'lora', 'merged', 'ct2'). "
+             "Use this when pushing multiple variants to the same repo so they don't "
+             "overwrite each other's shared filenames.",
+    )
+    parser.add_argument(
         "--token-from",
         choices=("env", "stdin"),
         default="env",
@@ -45,7 +52,7 @@ def main() -> None:
             "--token-from stdin."
         )
     cfg = HuggingFaceConfig(repo_id=args.repo_id, token=token)
-    upload_folder(cfg, args.folder)
+    upload_folder(cfg, args.folder, path_in_repo=args.path_in_repo)
 
 
 if __name__ == "__main__":

@@ -219,7 +219,24 @@ class TrainingManager:
             self.logs.append("[SYSTEM] Pipeline started.")
             self._start_next_task()
 
-    def start_upload_task(self, model_path: str, repo_id: str, hf_token: str):
+    def start_upload_task(self, model_path: str, repo_id: str, hf_token: str, path_in_repo: str = ""):
+        """Push a single folder to HF. Use start_upload_variants_task to push
+        multiple variants (lora/merged/ct2) to one repo in subfolders."""
+        self.start_upload_variants_task(
+            repo_id,
+            hf_token,
+            [(model_path, path_in_repo or "")],
+        )
+
+    def start_upload_variants_task(
+        self,
+        repo_id: str,
+        hf_token: str,
+        variants: list,  # List[Tuple[folder_path: str, path_in_repo: str]]
+    ):
+        """Queue N sequential HF uploads (one per variant) into a single pipeline.
+        Each variant lands in its own subfolder of the same repo so they don't
+        overwrite shared filenames like config.json / tokenizer.json."""
         with self.lock:
             if self.status == "running":
                 raise RuntimeError("A task is already running.")
@@ -227,38 +244,42 @@ class TrainingManager:
             hf_token = (hf_token or "").strip()
             if not hf_token:
                 raise ValueError("hf_token is required for upload tasks")
+            if not variants:
+                raise ValueError("at least one variant (folder, path_in_repo) is required")
 
-            # Reset logs
+            cwd = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+
             self.logs.clear()
-            open(LOG_FILE, 'w').close()
-
+            open(LOG_FILE, "w").close()
             self.status = "running"
             self.command_queue.clear()
+            self.pipeline_steps = []
 
-            # Verify path
-            cwd = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
-            full_model_path = os.path.abspath(model_path)
-            if not os.path.exists(full_model_path):
-                 # Try relative to cwd
-                 full_model_path = os.path.join(cwd, model_path)
-                 if not os.path.exists(full_model_path):
-                     raise ValueError(f"Model path does not exist: {model_path}")
+            for model_path, path_in_repo in variants:
+                full_model_path = os.path.abspath(model_path)
+                if not os.path.exists(full_model_path):
+                    full_model_path = os.path.join(cwd, model_path)
+                    if not os.path.exists(full_model_path):
+                        raise ValueError(f"Model path does not exist: {model_path}")
 
-            cmd_upload = [
-                sys.executable,
-                "-m", "backend.scripts.upload_hf",
-                "--repo-id", repo_id,
-                "--folder", full_model_path,
-                "--token-from", "stdin",
-            ]
+                cmd_upload = [
+                    sys.executable,
+                    "-m", "backend.scripts.upload_hf",
+                    "--repo-id", repo_id,
+                    "--folder", full_model_path,
+                    "--token-from", "stdin",
+                ]
+                if path_in_repo:
+                    cmd_upload += ["--path-in-repo", path_in_repo]
 
-            self.command_queue.append(("Uploading to HF", cmd_upload, hf_token + "\n"))
+                step_name = f"Uploading {path_in_repo or 'root'} -> {repo_id}"
+                self.command_queue.append((step_name, cmd_upload, hf_token + "\n"))
+                self.pipeline_steps.append(step_name)
 
-            # Store pipeline steps for status tracking
-            self.pipeline_steps = ["Uploading to HF"]
             self.current_step_index = 0
 
-            self.logs.append(f"[SYSTEM] Upload task started for {model_path}")
+            summary = ", ".join(p or "root" for _, p in variants)
+            self.logs.append(f"[SYSTEM] Upload pipeline started: {repo_id} (variants: {summary})")
             self._start_next_task()
 
     def start_preprocess_task(
