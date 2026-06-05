@@ -121,15 +121,19 @@ const TrainingPage = ({ apiBaseUrl }) => {
     const [logs, setLogs] = useState([]);
     const [pipelineSteps, setPipelineSteps] = useState([]);
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
+    // Defaults reflect the best-performing run (medical/tvgh fine-tunes):
+    // large-v2 base, LoRA r=64/alpha=128, LR 5e-5, 20k steps, full pipeline.
     const [config, setConfig] = useState({
-        model_name: 'openai/whisper-large-v3',
+        model_name: 'openai/whisper-large-v2',
         output_dir: 'lora-whisper',
-        max_steps: 100,
-        eval_steps: 50,
+        max_steps: 20000,
+        eval_steps: 1000,
         per_device_train_batch_size: 1,
-        learning_rate: 0.0001,
-        do_merge: false,
-        do_convert: false
+        learning_rate: 0.00005,
+        lora_r: 64,
+        lora_alpha: 128,
+        do_merge: true,
+        do_convert: true
     });
     const [availableModels, setAvailableModels] = useState([]);
     const [availableBuckets, setAvailableBuckets] = useState([]);
@@ -310,9 +314,10 @@ const TrainingPage = ({ apiBaseUrl }) => {
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
+        const intFields = ['max_steps', 'eval_steps', 'lora_r', 'lora_alpha', 'per_device_train_batch_size'];
         setConfig(prev => ({
             ...prev,
-            [name]: type === 'checkbox' ? checked : (name === 'max_steps' || name === 'eval_steps' ? parseInt(value) : value)
+            [name]: type === 'checkbox' ? checked : (intFields.includes(name) ? parseInt(value) : value)
         }));
     };
 
@@ -584,9 +589,34 @@ const TrainingPage = ({ apiBaseUrl }) => {
                                         <label className="text-xs text-slate-500 font-medium uppercase">Learning Rate</label>
                                         <input
                                             type="number"
-                                            step="0.0001"
+                                            step="0.00001"
                                             name="learning_rate"
                                             value={config.learning_rate}
+                                            onChange={handleChange}
+                                            disabled={status === 'running'}
+                                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-50"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-xs text-slate-500 font-medium uppercase">LoRA Rank (r)</label>
+                                        <input
+                                            type="number"
+                                            name="lora_r"
+                                            value={config.lora_r}
+                                            onChange={handleChange}
+                                            disabled={status === 'running'}
+                                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-50"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs text-slate-500 font-medium uppercase">LoRA Alpha</label>
+                                        <input
+                                            type="number"
+                                            name="lora_alpha"
+                                            value={config.lora_alpha}
                                             onChange={handleChange}
                                             disabled={status === 'running'}
                                             className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-50"
